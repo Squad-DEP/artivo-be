@@ -1,0 +1,9 @@
+{
+    "require": [
+        "ts-node/register",
+        "tests/runners/mocha/init.ts"
+    ],
+    "spec": [
+        "tests/**/*.spec.ts"
+    ]
+}

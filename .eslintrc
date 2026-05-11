@@ -1,0 +1,46 @@
+{
+  "root": true,
+  "env": {
+    "jest": true
+  },
+  "parser": "@typescript-eslint/parser",
+  "parserOptions": {
+    "project": [
+      "./tsconfig.json"
+    ],
+    "warnOnUnsupportedTypeScriptVersion": false
+  },
+  "extends": "airbnb-typescript/base",
+  "plugins": [
+    "import",
+    "@typescript-eslint"
+  ],
+  "ignorePatterns": [
+    "src/database/**",
+    "src/emails/**",
+    "src/scripts/**"
+  ],
+  "rules": {
+    "comma-dangle": 0,
+    "no-underscore-dangle": 0,
+    "no-param-reassign": 0,
+    "no-return-assign": 0,
+    "camelcase": 0,
+    "import/extensions": 0,
+    "@typescript-eslint/no-redeclare": 0,
+    "@typescript-eslint/no-unused-vars": 0,
+    "indent": 0,
+    "@typescript-eslint/indent": ["error", 4]
+  },
+  "settings": {
+    "import/parsers": {
+      "@typescript-eslint/parser": [
+        ".ts",
+        ".tsx"
+      ]
+    },
+    "import/resolver": {
+      "typescript": {}
+    }
+  }
+}

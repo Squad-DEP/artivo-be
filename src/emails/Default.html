@@ -1,0 +1,22 @@
+<div class="nano_h1">{{title}}</div>
+
+<div class="nano_p">
+    {{{ body }}}
+</div>
+
+{{#link}}
+<div class="nano_flex">
+    <a
+        href="{{ link }}"
+        class="nano_button"
+        target="_blank"
+    >{{ linkText }}</a>
+</div>
+
+<div class="nano_divider"></div>
+
+<div class="nano_p">
+    If the button above does not work, paste this into your browser:
+    <a href="{{ link }}">{{ link }}</a>
+</div>
+{{/link}}

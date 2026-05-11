@@ -1,0 +1,44 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: express-api
+  namespace: express-api
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: express-api
+  template:
+    metadata:
+      labels:
+        app: express-api
+    spec:
+      volumes:
+        - name: express-api-jwt-secret
+          secret:
+            secretName: express-api-jwt-secret
+      containers:
+        - name: express-api
+          image: registry.digitalocean.com/express-api/api:latest
+          lifecycle:
+            postStart:
+              exec:
+                command: ["/bin/bash", "-c", "sequelize db:migrate"]
+          ports:
+          - containerPort: 80
+          volumeMounts:
+          - name: express-api-jwt-secret
+            mountPath: "/app/private.pem"
+            subPath: private.pem
+          - name: express-api-jwt-secret
+            mountPath: "/app/public.pem"
+            subPath: public.pem
+          envFrom:
+          - configMapRef:
+              name: express-api-config
+          env:
+          - name: DB_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: express-api-secrets
+                key: DB_PASSWORD
