@@ -20,11 +20,9 @@ const generateJWT = (user: UserModel, signOptions: SignOptions) => {
         email: user.get('email'),
     };
 
-    signOptions.algorithm = 'RS512';
-
     return sign(
         payload,
-        fs.readFileSync(process.env.PRIVATE_KEY_PATH as string, 'utf8'),
+        process.env.JWT_SECRET || 'your-secret-key-change-in-production',
         signOptions,
     );
 };
