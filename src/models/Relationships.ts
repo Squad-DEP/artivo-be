@@ -1,16 +1,4 @@
-import GroupUser from './GroupUser';
-import Group from './Group';
-import User from './User';
+// Model relationships will be defined here as we add new models
+// Example: User relationships with ArtisanProfile, Jobs, Transactions, etc.
 
-
-User.belongsToMany(Group, {
-    through: GroupUser,
-    foreignKey: 'userID',
-    otherKey: 'groupID',
-});
-
-Group.belongsToMany(User, {
-    through: GroupUser,
-    foreignKey: 'groupID',
-    otherKey: 'userID',
-});
+export {};

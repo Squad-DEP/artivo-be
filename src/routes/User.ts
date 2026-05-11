@@ -1,8 +1,6 @@
 import { body, validationResult, matchedData } from 'express-validator';
-import { generateEmail } from './../providers/Helpers';
 import passport from './../providers/Passport';
 import middleware from './middleware';
-import Group from './../models/Group';
 import User from './../models/User';
 import * as OTPAuth from 'otpauth';
 import bcrypt from 'bcryptjs';
@@ -40,7 +38,6 @@ app.get('/user', [
 ], async (req: express.Request, res: express.Response, next: express.NextFunction) => {
     try {
         return res.json(await User.findByPk(req.user.id, {
-            include: [Group],
             rejectOnEmpty: true,
         }));
     } catch (error) {

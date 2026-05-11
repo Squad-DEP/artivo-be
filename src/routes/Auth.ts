@@ -2,9 +2,7 @@ import { body, validationResult, matchedData, param } from 'express-validator';
 import { ucFirst, generateJWT, generateEmail } from './../providers/Helpers';
 import { LoginAttempt, LoginAttemptModel } from './../models/LoginAttempt';
 import { User, UserModel } from './../models/User';
-import { GroupUser } from './../models/GroupUser';
 import passport from './../providers/Passport';
-import { Group } from './../models/Group';
 import middleware from './middleware';
 import { v4 as uuidv4 } from 'uuid';
 import * as OTPAuth from 'otpauth';
@@ -229,9 +227,6 @@ app.post('/auth/login/mfa', [
  *               lastName:
  *                 type: string
  *                 description: User's last name (optional)
- *               groupName:
- *                 type: string
- *                 description: Name for the user's default group (optional)
  *               tos:
  *                 type: boolean
  *                 description: Acceptance of Terms of Service
@@ -263,8 +258,6 @@ app.post('/auth/sign-up', [
     body('lastName')
         .default('')
         .optional(),
-    body('groupName')
-        .optional(),
     body('tos', 'You must accept the Terms of Service to use this platform')
         .exists()
         .notEmpty(),
@@ -277,17 +270,7 @@ app.post('/auth/sign-up', [
         const data = matchedData(req);
 
         const userID = uuidv4();
-        const groupID = uuidv4();
         if (!data.lastName) data.lastName = '';
-        if (!data.groupName) data.groupName = data.firstName.concat('\'s Team');
-
-        await Group.create({
-            id: groupID,
-            name: data.groupName,
-            ownerID: userID,
-        });
-
-        await GroupUser.create({ userID, groupID, role: 'Admin' });
 
         const user = await User.create({
             id: userID,
@@ -329,117 +312,6 @@ app.post('/auth/sign-up', [
                     successful: true,
                     ip: req.headers['x-forwarded-for']?.toString().split(',')[0].trim() || req.socket.remoteAddress,
                     headers: JSON.stringify(req.headers),
-                });
-            });
-        })(req, res);
-    } catch (error) {
-        return next(error);
-    }
-});
-
-/**
- * @openapi
- * /auth/sign-up/with-invite:
- *   post:
- *     description: Accept an invitation to group and create a user account
- *     tags: [Auth]
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required:
- *               - email
- *               - password
- *               - firstName
- *               - tos
- *               - inviteKey
- *             properties:
- *               email:
- *                 type: string
- *                 format: email
- *                 description: User's email address
- *               password:
- *                 type: string
- *                 description: User's password (must meet strength requirements)
- *               firstName:
- *                 type: string
- *                 description: User's first name
- *               lastName:
- *                 type: string
- *                 description: User's last name (optional)
- *               tos:
- *                 type: boolean
- *                 description: Acceptance of Terms of Service
- *               inviteKey:
- *                 type: string
- *                 description: Invitation key received via email
- *     responses:
- *       200:
- *         description: Successfully accepted invitation and created account
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/AccessToken'
- */
-app.post('/auth/sign-up/with-invite', [
-    body('email')
-        .exists({ checkFalsy: true })
-        .isEmail()
-        .toLowerCase(),
-    body('password')
-        .notEmpty()
-        .exists(),
-    body('firstName', 'You must provide your first name')
-        .exists(),
-    body('lastName'),
-    body('tos', 'You must accept the Terms of Service to use this platform')
-        .exists(),
-    body('inviteKey').exists(),
-    middleware.isStrongPassword,
-    middleware.hCaptcha,
-], async (req: express.Request, res: express.Response, next: express.NextFunction) => {
-    try {
-        const errors = validationResult(req);
-        if (!errors.isEmpty()) return res.status(422).json({ errors: errors.mapped() });
-        const data = matchedData(req);
-
-        const relationship = await GroupUser.findOne({
-            where: { inviteKey: data.inviteKey },
-        });
-
-        if (!relationship) return res.status(404).json({ msg: 'Invite not found' });
-
-        const user = await User.findByPk(relationship.userID, {
-            rejectOnEmpty: true,
-        });
-
-        await user.update({
-            password: bcrypt.hashSync(data.password, bcrypt.genSaltSync(10)),
-            firstName: ucFirst(data.firstName),
-            lastName: ucFirst(data.lastName),
-            lastLoginAt: day().format('YYYY-MM-DD HH:mm:ss'),
-            tos: data.tos,
-            emailVerified: true,
-            emailVerificationKey: null,
-        });
-
-        await relationship.update({
-            inviteKey: null,
-        });
-
-        return passport.authenticate('local', { session: false }, (err: Error | null, usr: UserModel | null) => {
-            if (err) throw err;
-            if (!usr) throw new Error('User not found');
-
-            req.login(usr, { session: false }, (err_) => {
-                if (err_) throw err_;
-
-                return res.json({
-                    accessToken: generateJWT(usr, {
-                        expiresIn: '24h',
-                    }),
                 });
             });
         })(req, res);
@@ -689,7 +561,6 @@ app.post('/auth/reset', [
 
         const user = await User.findOne({
             where: { email, passwordResetKey },
-            include: [Group],
             rejectOnEmpty: true,
         });
 
@@ -712,66 +583,6 @@ app.post('/auth/reset', [
                 });
             });
         })(req, res);
-    } catch (error) {
-        return next(error);
-    }
-});
-
-/**
- * @openapi
- * /auth/get-user-by-invite-key/{inviteKey}:
- *   get:
- *     description: Get user information by invite key
- *     tags: [Auth]
- *     parameters:
- *       - in: path
- *         name: inviteKey
- *         required: true
- *         schema:
- *           type: string
- *         description: Invitation key sent to the user's email
- *     responses:
- *       200:
- *         description: Returns basic user information
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 id:
- *                   type: string
- *                   description: User ID
- *                 email:
- *                   type: string
- *                   format: email
- *                   description: User's email address
- */
-app.get('/auth/get-user-by-invite-key/:inviteKey', [
-    param('inviteKey').exists(),
-], async (req: express.Request, res: express.Response, next: express.NextFunction) => {
-    try {
-        const errors = validationResult(req);
-        if (!errors.isEmpty()) return res.status(422).json({ errors: errors.mapped() });
-        const { inviteKey } = matchedData(req);
-
-        const relationship = await GroupUser.findOne({
-            where: { inviteKey },
-        });
-
-        if (!relationship) return res.status(404).json({ msg: 'Invite not found' });
-
-        const user = await User.findOne({
-            where: {
-                id: relationship.userID,
-            },
-            attributes: ['id', 'email'],
-            rejectOnEmpty: true,
-        });
-
-        return res.json({
-            id: user.id,
-            email: user.email,
-        });
     } catch (error) {
         return next(error);
     }
