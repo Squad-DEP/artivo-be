@@ -10,7 +10,16 @@ Marketplace platform with AI-powered onboarding, digital profiles, and payment p
 npm install
 cp .env.example .env
 # Edit .env with your config
-npm run db:migrate
+
+# Optios for db setup:
+npm run db:schema 
+# → runs setup-one.up.sql (creates all tables)
+npm run db:seed 
+# → runs seed.sql (inserts sample data)
+npm run db:setup 
+# → runs both setup and seed in sequence
+
+# Start the development server
 npm start
 ```
 

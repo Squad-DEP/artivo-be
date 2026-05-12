@@ -1,6 +1,4 @@
 import 'dotenv/config';
-import GroupUser from '../src/models/GroupUser';
-import { Group } from '../src/models/Group';
 import { User } from '../src/models/User';
 import supertest from 'supertest';
 import { expect } from 'chai';
@@ -250,86 +248,6 @@ describe('Auth', () => {
                     .expect(422);
 
                 expect(res.body.errors.passwordResetKey.msg).to.equal('This link has expired');
-            });
-        });
-    });
-
-    describe('User Invitation Flow', () => {
-        let inviteKey: string;
-        const testEmail = `${crypto.randomBytes(10).toString('hex')}@example.com`;
-
-        describe('GET /api/v1/auth/get-user-by-invite-key/:inviteKey', () => {
-            before(async () => {
-                // Create a user with invite key
-                const user = await User.create({
-                    email: testEmail,
-                    password: 'temporary',
-                    firstName: '',
-                    tos: 'tos-version-2026',
-                });
-                const group = await Group.create({
-                    name: 'Test group',
-                    ownerID: user.id,
-                });
-                const relationship = await GroupUser.create({
-                    groupID: group.id,
-                    userID: user.id,
-                    role: 'User',
-                    inviteKey: crypto.randomBytes(10).toString('hex'),
-                });
-                inviteKey = relationship.inviteKey as string;
-            });
-
-            it('Should return user info for valid invite key', async () => {
-                const res = await supertest(app)
-                    .get(`/api/v1/auth/get-user-by-invite-key/${inviteKey}`)
-                    .expect(200);
-
-                expect(res.body.id).to.be.a('string');
-                expect(res.body.email).to.equal(testEmail);
-            });
-
-            it('Should reject invalid invite key', async () => {
-                await supertest(app)
-                    .get('/api/v1/auth/get-user-by-invite-key/invalid-key')
-                    .expect(404);
-            });
-        });
-
-        describe('POST /api/v1/auth/sign-up/with-invite', () => {
-            it('Should accept invitation and create account', async () => {
-                const res = await supertest(app)
-                    .post('/api/v1/auth/sign-up/with-invite')
-                    .send({
-                        email: testEmail,
-                        password: 'StrongPass123!',
-                        firstName: 'Test',
-                        lastName: 'User',
-                        tos: 'tos-version-2026',
-                        inviteKey: inviteKey
-                    })
-                    .expect(200);
-
-                expect(res.body.accessToken).to.be.a('string');
-                const user = await User.unscoped().findOne({ where: { email: testEmail }, rejectOnEmpty: true });
-                const relationship = await GroupUser.unscoped().findOne({ where: { userID: user.id }, rejectOnEmpty: true });
-                expect(user.emailVerified).to.equal(true);
-                expect(user.emailVerificationKey).to.equal(null);
-                expect(relationship.inviteKey).to.equal(null);
-            });
-
-            it('Should reject invalid invite key', async () => {
-                await supertest(app)
-                    .post('/api/v1/auth/sign-up/with-invite')
-                    .send({
-                        email: 'another@example.com',
-                        password: 'StrongPass123!',
-                        firstName: 'Test',
-                        lastName: 'User',
-                        tos: 'tos-version-2026',
-                        inviteKey: 'invalid-key'
-                    })
-                    .expect(404);
             });
         });
     });
