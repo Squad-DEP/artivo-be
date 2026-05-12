@@ -2,7 +2,6 @@ import { body, validationResult, matchedData } from 'express-validator';
 import passport from './../providers/Passport';
 import middleware from './middleware';
 import User from './../models/User';
-import * as OTPAuth from 'otpauth';
 import bcrypt from 'bcryptjs';
 import express from 'express';
 
@@ -60,15 +59,12 @@ app.get('/user', [
  *           schema:
  *             type: object
  *             properties:
- *               firstName:
+ *               fullName:
  *                 type: string
- *                 description: User's first name
- *               lastName:
+ *                 description: User's full name
+ *               phone:
  *                 type: string
- *                 description: User's last name
- *               bio:
- *                 type: string
- *                 description: User's bio
+ *                 description: User's phone number
  *     responses:
  *       200:
  *         description: Returns the current user
@@ -81,9 +77,8 @@ app.get('/user', [
  */
 app.post('/user', [
     passport.authenticate('jwt', { session: false }),
-    body('firstName').optional(),
-    body('lastName').optional(),
-    body('bio').optional(),
+    body('fullName').optional(),
+    body('phone').optional(),
 ], async (req: express.Request, res: express.Response, next: express.NextFunction) => {
     try {
         const errors = validationResult(req);
@@ -128,8 +123,6 @@ app.post('/user/resend-verification-email', [
         //////////////////////////////////////////
         // EMAIL THIS LINK TO THE USER
         if (typeof global.it !== 'function') console.log(`\n\nEMAIL THIS CODE TO THE USER\nCODE: ${user.emailVerificationKey}\n\n`);
-        // const link = `${process.env.BACKEND_URL}/auth/verify-email/${user.emailVerificationKey}?redirect=1`; // HINT: You could also send a clickable link.
-        // const html = generateEmail('Verify', { firstName: user.firstName, code: user.emailVerificationKey });
         //////////////////////////////////////////
 
         return res.json({ email: user.email });
@@ -191,179 +184,30 @@ app.post('/user/update-password', [
 
 /**
  * @openapi
- * /user/enable-mfa:
- *   post:
- *     description: Enable MFA for the current user
+ * /user/virtual-account:
+ *   get:
+ *     description: Get user's virtual account details
  *     tags: [User]
  *     security:
  *       - bearerAuth: []
  *     responses:
  *       200:
- *         description: Returns the current user
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 uri:
- *                   type: string
+ *         description: Returns virtual account details
  */
-app.post('/user/enable-mfa', [
+app.get('/user/virtual-account', [
     passport.authenticate('jwt', { session: false }),
-    middleware.checkPassword,
 ], async (req: express.Request, res: express.Response, next: express.NextFunction) => {
     try {
-        const errors = validationResult(req);
-        if (!errors.isEmpty()) return res.status(422).json({ errors: errors.mapped() });
+        const { VirtualAccountService } = await import('../services/squad/VirtualAccountService');
+        const virtualAccountService = new VirtualAccountService();
+        
+        const virtualAccount = await virtualAccountService.getVirtualAccountByUserId(req.user.id);
 
-        const user = await User.findByPk(req.user.id, { rejectOnEmpty: true });
+        if (!virtualAccount) {
+            return res.status(404).json({ msg: 'Virtual account not found' });
+        }
 
-        if (user.mfaEnabled) return res.status(400).json({ msg: 'MFA is already enabled for this account', code: 400 });
-
-        const secret = new OTPAuth.Secret({ size: 20 });
-
-        const totp = new OTPAuth.TOTP({
-            issuer: 'express-api',
-            label: user.email,
-            algorithm: 'SHA3-512',
-            digits: 6,
-            period: 30,
-            secret: secret.base32,
-        });
-
-        await User.unscoped().update({
-            mfaEnabled: false,
-            mfaSecret: secret.base32,
-        }, {
-            where: {
-                id: req.user.id,
-            },
-        });
-
-        return res.json({
-            uri: totp.toString(),
-        });
-    } catch (error) {
-        return next(error);
-    }
-});
-
-/**
- * @openapi
- * /user/confirm-mfa:
- *   post:
- *     description: Confirm MFA
- *     tags: [User]
- *     security:
- *       - bearerAuth: []
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required:
- *               - token
- *             properties:
- *               token:
- *                 type: string
- *                 minLength: 6
- *                 maxLength: 6
- *     responses:
- *       200:
- *         description: Returns success status
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 success:
- *                   type: boolean
- *       401:
- *         description: Unauthorized - Invalid MFA code or MFA not enabled
- */
-app.post('/user/confirm-mfa', [
-    passport.authenticate('jwt', { session: false }),
-    body('token')
-        .exists()
-        .isLength({ min: 6, max: 6 }),
-], async (req: express.Request, res: express.Response, next: express.NextFunction) => {
-    try {
-        const errors = validationResult(req);
-        if (!errors.isEmpty()) return res.status(422).json({ errors: errors.mapped() });
-        const { token } = matchedData(req);
-
-        const { mfaSecret, email: label } = await User.scope('mfa').findByPk(req.user.id, {
-            rejectOnEmpty: true,
-        });
-
-        if (mfaSecret === null) return res.status(401).json({ msg: 'MFA is not enabled for this account', code: 401 });
-
-        const totp = new OTPAuth.TOTP({
-            issuer: 'express-api',
-            label,
-            algorithm: 'SHA3-512',
-            digits: 6,
-            period: 30,
-            secret: mfaSecret as string,
-        });
-
-        const delta = totp.validate({ token: token, window: 1 });
-        if (delta === null) return res.status(401).json({ msg: 'Incorrect MFA code', code: 401 });
-
-        await User.unscoped().update({
-            mfaEnabled: true,
-        }, {
-            where: {
-                id: req.user.id,
-            },
-        });
-
-        return res.json({ success: true });
-    } catch (error) {
-        return next(error);
-    }
-});
-
-/**
- * @openapi
- * /user/disable-mfa:
- *   post:
- *     description: Disable MFA
- *     tags: [User]
- *     security:
- *       - bearerAuth: []
- *     responses:
- *       200:
- *         description: Returns success status
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 success:
- *                   type: boolean
- *       401:
- *         description: Unauthorized - Invalid MFA code or MFA not enabled
- */
-app.post('/user/disable-mfa', [
-    passport.authenticate('jwt', { session: false }),
-    middleware.checkPassword,
-], async (req: express.Request, res: express.Response, next: express.NextFunction) => {
-    try {
-        const errors = validationResult(req);
-        if (!errors.isEmpty()) return res.status(422).json({ errors: errors.mapped() });
-
-        await User.unscoped().update({
-            mfaEnabled: false,
-            mfaSecret: null,
-        }, {
-            where: {
-                id: req.user.id,
-            },
-        });
-
-        return res.json({ success: true });
+        return res.json({ virtual_account: virtualAccount });
     } catch (error) {
         return next(error);
     }

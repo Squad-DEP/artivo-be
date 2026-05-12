@@ -32,3 +32,4 @@ const sequelize = new Sequelize({
 sequelize.authenticate().then(() => (process.env.NODE_ENV !== 'test') ? console.log(`* DB Connected (${process.env.NODE_ENV})`) : null);
 
 export default sequelize;
+export { sequelize };
