@@ -6,8 +6,14 @@ module.exports = {
         password: process.env.DB_PASSWORD,
         database: process.env.DB_DATABASE,
         host: process.env.DB_HOST,
-        port: process.env.DB_PORT || '3306',
-        dialect: 'mysql',
+        port: process.env.DB_PORT || '5432',
+        dialect: process.env.DB_DIALECT || 'postgres',
+        dialectOptions: {
+            ssl: {
+                require: true,
+                rejectUnauthorized: false
+            }
+        },
         pool: {
             max: 5,
             min: 0,
@@ -16,16 +22,12 @@ module.exports = {
         },
     },
     test: {
-        // AB: I didn't want to make a second MySQL 
-        // container for testing, so will use the root 
-        // user and use the DB `test`. This needs to 
-        // be hardcoded because of providers/db.ts
         username: 'root',
         password: 'supersecret',
         database: 'test',
         host: process.env.DB_HOST,
-        port: process.env.DB_PORT || '3306',
-        dialect: 'mysql',
+        port: process.env.DB_PORT || '5432',
+        dialect: 'postgres',
         pool: {
             max: 5,
             min: 0,
@@ -38,8 +40,14 @@ module.exports = {
         password: process.env.DB_PASSWORD,
         database: process.env.DB_DATABASE,
         host: process.env.DB_HOST,
-        port: process.env.DB_PORT || '3306',
-        dialect: 'mysql',
+        port: process.env.DB_PORT || '5432',
+        dialect: process.env.DB_DIALECT || 'postgres',
+        dialectOptions: {
+            ssl: {
+                require: true,
+                rejectUnauthorized: false
+            }
+        },
         pool: {
             max: 5,
             min: 0,
