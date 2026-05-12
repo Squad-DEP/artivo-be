@@ -88,3 +88,5 @@ typings/
 
 # Serverless directories
 .serverless
+
+/squad-test/

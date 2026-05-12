@@ -563,3 +563,65 @@ app.get('/_authcheck', [
     auth: true,
     id: req.user.id,
 }));
+
+/**
+ * @openapi
+ * /auth/verify-email-manual:
+ *   post:
+ *     description: Manually verify email (for demo/testing)
+ *     tags: [Auth]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - email
+ *             properties:
+ *               email:
+ *                 type: string
+ *                 format: email
+ *     responses:
+ *       200:
+ *         description: Email verified and virtual account created
+ */
+app.post('/auth/verify-email-manual', [
+    body('email').isEmail().toLowerCase(),
+], async (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    try {
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) return res.status(422).json({ errors: errors.mapped() });
+        const { email } = matchedData(req);
+
+        const user = await User.findOne({
+            where: { email },
+            rejectOnEmpty: true,
+        });
+
+        if (user.emailVerified) {
+            return res.json({ msg: 'Email already verified', verified: true });
+        }
+
+        await user.update({
+            emailVerified: true,
+            emailVerificationKey: null,
+        });
+
+        // Create virtual account after email verification
+        const virtualAccountService = new VirtualAccountService();
+        const virtualAccount = await virtualAccountService.createVirtualAccountForUser(user);
+
+        return res.json({ 
+            verified: true, 
+            id: user.id,
+            virtual_account: virtualAccount ? {
+                account_number: virtualAccount.virtualAccountNumber,
+                account_name: virtualAccount.virtualAccountName,
+                bank_name: virtualAccount.bankName,
+            } : null
+        });
+    } catch (error) {
+        return next(error);
+    }
+});
