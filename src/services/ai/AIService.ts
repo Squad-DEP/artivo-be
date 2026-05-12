@@ -35,10 +35,34 @@ class AIService {
      * Process onboarding conversation
      */
     async processOnboarding(userInput: string, userType: 'artisan' | 'customer', context?: string[]): Promise<AIResult> {
-        const prompt = userType === 'artisan'
-            ? 'You are helping an artisan sign up. Ask about their skills, experience, location, and availability. Extract structured data from their responses.'
-            : 'You are helping a customer sign up. Ask about their needs, location, and preferences. Extract structured data from their responses.';
 
+        let prompt = '';
+
+        if (userType === 'artisan') {
+            prompt = `You are an AI onboarding assistant parsing inputs into structural artisan profiles. 
+            Analyze the input and return valid JSON matching this schema:
+            {
+                "fullName": "string or null",
+                "profession": "string or null",
+                "skills": ["array of strings"],
+                "yearsOfExperience": number or null,
+                "cityLocation": "string or null",
+                "expectedHourlyRate": "string or null",
+                "availability": "string or null"
+            }
+            Do not return any conversational text, only return raw stringified JSON.`;
+        } else {
+            prompt = `You are an AI onboarding assistant parsing inputs into client requests. 
+            Analyze the input and return valid JSON matching this schema:
+            {
+                "clientName": "string or null",
+                "serviceRequired": "string or null",
+                "projectDescription": "string or null",
+                "budgetLimit": "string or null",
+                "urgency": "string or null"
+            }
+            Do not return any conversational text, only return raw stringified JSON.`;
+        }
         return this.provider.process(prompt, userInput, context);
     }
 

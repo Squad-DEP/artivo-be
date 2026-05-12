@@ -69,32 +69,25 @@ app.post('/ai/onboard/voice', [
         
         const { audioData, userType } = matchedData(req);
 
-        // Step 1: Convert speech to text
-        const transcription = await SpeechService.transcribe(audioData);
-        
-        if (!transcription.success) {
-            return res.status(500).json({ 
-                msg: 'Failed to transcribe audio',
-                error: transcription.error 
+        //sanitize: strip potential front end uri prefixes 
+        const cleanBase64Audio = audioData.replace(/^data:audio\/\w+;base64,/, "").trim();
+
+        //direct stream: Pass clean base64 directly into the unified multimodal provider matrix
+        const aiResult = await AIService.processOnboarding(cleanBase64Audio, userType);
+
+        if(!aiResult.success) {
+            return res.status(500).json({
+                message: "Failed to process audio onboarding with AI",
+                error: aiResult.error
             });
         }
 
-        // Step 2: Process text with AI
-        const aiResult = await AIService.processOnboarding(transcription.text!, userType);
-
-        if (!aiResult.success) {
-            return res.status(500).json({ 
-                msg: 'Failed to process with AI',
-                error: aiResult.error 
-            });
-        }
-
-        return res.json({
-            success: true,
-            transcription: transcription.text,
-            aiResponse: aiResult.response,
+        return res.status(200).json({
+            message: true,
             data: aiResult.data
         });
+        
+        
     } catch (error) {
         return next(error);
     }
