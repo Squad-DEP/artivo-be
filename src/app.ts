@@ -16,6 +16,7 @@ import './models/Relationships';
 import { app as Auth } from './routes/Auth';
 import { app as User } from './routes/User';
 import { app as AI } from './routes/AI';
+import { app as Matching } from './routes/Matching';
 
 
 const isTest = (process.env.NODE_ENV === 'test');
@@ -71,6 +72,7 @@ if (!isTest) app.use(rateLimit({
 app.use('/api/v1', Auth);
 app.use('/api/v1', User);
 app.use('/api/v1', AI);
+app.use('/api/v1', Matching);
 app.use(ErrorHandler);
 
 export default app;
