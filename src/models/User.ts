@@ -14,37 +14,29 @@ import { DataTypes } from 'sequelize';
  *         email:
  *           type: string
  *           format: email
- *         firstName:
- *           type: string   
- *         lastName:
+ *         phone:
  *           type: string
- *         bio:
+ *         full_name:
  *           type: string
- *         emailVerified:
- *           type: boolean
- *         lastLoginAt:
+ *         role:
+ *           type: string
+ *           enum: [worker, customer]
+ *         created_at:
  *           type: string
  *           format: date-time
  */
 
 interface UserModel extends Model<InferAttributes<UserModel>, InferCreationAttributes<UserModel>> {
-    id: CreationOptional<string>,
-
-    email: string,
-    password: string,
-
-    mfaEnabled: CreationOptional<boolean>,
-    mfaSecret: CreationOptional<string> | null,
-
-    firstName: string,
-    lastName: CreationOptional<string> | null,
-    tos: CreationOptional<string> | null,
-    bio: CreationOptional<string> | null,
-
-    passwordResetKey: CreationOptional<string> | null,
-    emailVerificationKey: CreationOptional<string> | null,
-    emailVerified: CreationOptional<boolean>,
-    lastLoginAt: CreationOptional<string>,
+    id: CreationOptional<string>;
+    email: string;
+    phone: CreationOptional<string> | null;
+    fullName: string;
+    role: 'worker' | 'customer';
+    password: CreationOptional<string> | null;
+    passwordResetKey: CreationOptional<string> | null;
+    emailVerificationKey: CreationOptional<string> | null;
+    emailVerified: CreationOptional<boolean>;
+    createdAt: CreationOptional<Date>;
 }
 
 const User = sequelize.define<UserModel>('user', {
@@ -55,88 +47,63 @@ const User = sequelize.define<UserModel>('user', {
         allowNull: false,
         unique: true,
     },
-
     email: {
-        type: DataTypes.STRING,
+        type: DataTypes.STRING(255),
         allowNull: false,
         unique: true,
     },
-    password: {
-        type: DataTypes.STRING,
-        allowNull: false,
-    },
-
-    mfaEnabled: {
-        type: DataTypes.BOOLEAN,
-        defaultValue: false,
-        allowNull: false,
-    },
-    mfaSecret: {
-        type: DataTypes.STRING,
+    phone: {
+        type: DataTypes.STRING(20),
         allowNull: true,
     },
-
-    firstName: {
-        type: DataTypes.STRING,
+    fullName: {
+        type: DataTypes.STRING(255),
         allowNull: false,
+        field: 'full_name',
     },
-    lastName: {
-        type: DataTypes.STRING,
-        defaultValue: '',
+    role: {
+        type: DataTypes.STRING(20),
         allowNull: false,
+        validate: {
+            isIn: [['worker', 'customer']],
+        },
     },
-    bio: {
-        type: DataTypes.STRING,
-        defaultValue: '',
-        allowNull: false,
-    },
-
-    tos: {
+    password: {
         type: DataTypes.STRING,
         allowNull: true,
     },
     passwordResetKey: {
         type: DataTypes.STRING,
         allowNull: true,
+        field: 'password_reset_key',
     },
     emailVerificationKey: {
         type: DataTypes.STRING,
         allowNull: true,
+        field: 'email_verification_key',
     },
     emailVerified: {
         type: DataTypes.BOOLEAN,
         defaultValue: false,
         allowNull: false,
+        field: 'email_verified',
     },
-
-    lastLoginAt: {
+    createdAt: {
         type: DataTypes.DATE,
-        allowNull: true,
+        allowNull: false,
+        defaultValue: DataTypes.NOW,
+        field: 'created_at',
     },
 }, {
-    tableName: 'Users',
-    paranoid: true,
+    tableName: 'users',
+    timestamps: false,
     defaultScope: {
         attributes: {
             exclude: [
                 'password',
-                'mfaEnabled',
-                'mfaSecret',
                 'passwordResetKey',
                 'emailVerificationKey',
             ],
-        },
-    },
-    scopes: {
-        mfa: {
-            attributes: {
-                include: [
-                    'id',
-                    'email',
-                    'mfaEnabled',
-                    'mfaSecret',
-                ],
-            },
         },
     },
 });

@@ -17,6 +17,8 @@ import { app as Auth } from './routes/Auth';
 import { app as User } from './routes/User';
 import { app as AI } from './routes/AI';
 import { app as Matching } from './routes/Matching';
+import { app as Customer } from './routes/Customer';
+import { app as Worker } from './routes/Worker';
 
 
 const isTest = (process.env.NODE_ENV === 'test');
@@ -73,6 +75,8 @@ app.use('/api/v1', Auth);
 app.use('/api/v1', User);
 app.use('/api/v1', AI);
 app.use('/api/v1', Matching);
+app.use('/api/v1', Customer);
+app.use('/api/v1', Worker);
 app.use(ErrorHandler);
 
 export default app;

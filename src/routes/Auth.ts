@@ -1,15 +1,12 @@
 import { body, validationResult, matchedData, param } from 'express-validator';
 import { ucFirst, generateJWT, generateEmail } from './../providers/Helpers';
-import { LoginAttempt, LoginAttemptModel } from './../models/LoginAttempt';
 import { User, UserModel } from './../models/User';
 import passport from './../providers/Passport';
 import middleware from './middleware';
 import { v4 as uuidv4 } from 'uuid';
-import * as OTPAuth from 'otpauth';
 import bcrypt from 'bcryptjs';
 import express from 'express';
 import crypto from 'crypto';
-import day from 'dayjs';
 
 export const app = express.Router();
 
@@ -76,15 +73,14 @@ export const app = express.Router();
 app.post('/auth/login', [
     body('email').exists().toLowerCase(),
     body('password').exists(),
-    body('token').optional().isLength({ min: 6, max: 6 }),
 
     middleware.hCaptcha,
 
     async (req: express.Request, res: express.Response, next: express.NextFunction) => {
         try {
-            const { email, token } = matchedData(req);
-            const { mfaEnabled } = await User.scope('mfa').findOne({ where: { email }, rejectOnEmpty: true });
-            if (mfaEnabled && !token) return res.status(403).json({ msg: 'MFA is enabled for this account', code: 403 });
+            const { email } = matchedData(req);
+            const user = await User.findOne({ where: { email } });
+            if (!user) return res.status(401).json({ msg: 'Incorrect email or password' });
             return next();
         } catch (error) {
             return res.status(401).json({ msg: 'Incorrect email or password' });
@@ -94,50 +90,17 @@ app.post('/auth/login', [
     try {
         const errors = validationResult(req);
         if (!errors.isEmpty()) return res.status(422).json({ errors: errors.mapped() });
-        const { token, email } = matchedData(req);
-
-        const loginAttempt: LoginAttemptModel = await LoginAttempt.create({
-            email,
-            successful: false,
-            ip: req.headers['x-forwarded-for']?.toString().split(',')[0].trim() || req.socket.remoteAddress,
-            headers: JSON.stringify(req.headers),
-        });
+        const { email } = matchedData(req);
 
         passport.authenticate('local', { session: false }, async (err: Error | null, user: UserModel | null) => {
             if (err) throw err;
             if (!user) return res.status(401).json({ msg: 'Incorrect email or password' });
-
-            const { mfaEnabled, email: label, mfaSecret } = await User.scope('mfa').findByPk(user.get('id'), { rejectOnEmpty: true });
-            if (mfaEnabled) {
-                const totp = new OTPAuth.TOTP({
-                    issuer: 'express-api',
-                    label,
-                    algorithm: 'SHA3-512',
-                    digits: 6,
-                    period: 30,
-                    secret: mfaSecret as string,
-                });
-                const delta = totp.validate({ token: token, window: 1 });
-                if (delta === null) return res.status(401).json({ msg: 'Invalid MFA code', code: 401 });
-            }
 
             req.login(user, { session: false }, (err_: Error) => {
                 if (err_) throw err_;
 
                 res.json({
                     accessToken: generateJWT(user, { expiresIn: '24h' }),
-                });
-
-                User.update({
-                    lastLoginAt: day().format('YYYY-MM-DD HH:mm:ss'),
-                }, {
-                    where: {
-                        id: user.get('id'),
-                    },
-                });
-
-                loginAttempt.update({
-                    successful: true,
                 });
             });
         })(req, res, next);
@@ -178,19 +141,8 @@ app.post('/auth/login/mfa', [
     body('email').optional().default('').toLowerCase(),
 ], async (req: express.Request, res: express.Response, next: express.NextFunction) => {
     try {
-        const errors = validationResult(req);
-        if (!errors.isEmpty()) return res.json({ mfa: false });
-        const { email } = matchedData(req);
-
-        const user = await User.unscoped().findOne({
-            where: {
-                email,
-            },
-        });
-
-        if (!user) return res.json({ mfa: false });
-
-        res.json({ mfa: !!user.mfaEnabled });
+        // MFA not implemented in simplified schema
+        return res.json({ mfa: false });
     } catch (error) {
         return res.json({ mfa: false });
     }
@@ -258,6 +210,12 @@ app.post('/auth/sign-up', [
     body('lastName')
         .default('')
         .optional(),
+    body('phone')
+        .optional(),
+    body('role')
+        .optional()
+        .isIn(['worker', 'customer'])
+        .default('customer'),
     body('tos', 'You must accept the Terms of Service to use this platform')
         .exists()
         .notEmpty(),
@@ -270,30 +228,22 @@ app.post('/auth/sign-up', [
         const data = matchedData(req);
 
         const userID = uuidv4();
-        if (!data.lastName) data.lastName = '';
+        const fullName = `${ucFirst(data.firstName)} ${data.lastName ? ucFirst(data.lastName) : ''}`.trim();
 
         const user = await User.create({
             id: userID,
             email: data.email,
+            phone: data.phone || null,
+            fullName,
+            role: data.role || 'customer',
             password: bcrypt.hashSync(data.password, bcrypt.genSaltSync(10)),
-            mfaEnabled: false,
-            firstName: ucFirst(data.firstName),
-            lastName: ucFirst(data.lastName),
-            lastLoginAt: day().format('YYYY-MM-DD HH:mm:ss'),
-            tos: data.tos,
             emailVerificationKey: String(Math.floor(Math.random() * (999999 - 111111 + 1)) + 111111),
         });
-
 
         //////////////////////////////////////////
         // EMAIL THIS TO THE USER
         if (typeof global.it !== 'function') console.log(`\n\nEMAIL THIS CODE TO THE USER\nCODE: ${user.emailVerificationKey}\n\n`);
-
-        // const link = `${process.env.BACKEND_URL}/auth/verify-email/${user.emailVerificationKey}?redirect=1`; // HINT: You could also send a clickable link.
-
-        // const html = generateEmail('Verify', { firstName: user.firstName, code: user.emailVerificationKey });
         //////////////////////////////////////////
-
 
         return passport.authenticate('local', { session: false }, (err: Error, usr: UserModel) => {
             if (err) throw err;
@@ -305,13 +255,6 @@ app.post('/auth/sign-up', [
                     accessToken: generateJWT(usr, {
                         expiresIn: '24h',
                     }),
-                });
-
-                LoginAttempt.create({
-                    email: user.email,
-                    successful: true,
-                    ip: req.headers['x-forwarded-for']?.toString().split(',')[0].trim() || req.socket.remoteAddress,
-                    headers: JSON.stringify(req.headers),
                 });
             });
         })(req, res);

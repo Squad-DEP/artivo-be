@@ -2,6 +2,8 @@ import { param, validationResult, matchedData } from 'express-validator';
 import MatchingService from '../services/matching/MatchingService';
 import passport from '../providers/Passport';
 import express from 'express';
+import { sequelize } from '../providers/db';
+import { QueryTypes } from 'sequelize';
 
 export const app = express.Router();
 
@@ -11,6 +13,41 @@ export const app = express.Router();
  *   - name: Matching
  *     description: AI-powered job matching
  */
+
+/**
+ * @openapi
+ * /matching/job-types:
+ *   get:
+ *     description: Get all available job types
+ *     tags: [Matching]
+ *     responses:
+ *       200:
+ *         description: List of job types
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 type: object
+ *                 properties:
+ *                   id:
+ *                     type: string
+ *                   name:
+ *                     type: string
+ *                   description:
+ *                     type: string
+ */
+app.get('/matching/job-types', async (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    try {
+        const jobTypes = await sequelize.query(
+            'SELECT id, name, description FROM job_types ORDER BY name',
+            { type: QueryTypes.SELECT }
+        );
+        return res.json(jobTypes);
+    } catch (error) {
+        return next(error);
+    }
+});
 
 /**
  * @openapi

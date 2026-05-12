@@ -20,12 +20,12 @@ export default async (req: Request, res: Response, next: NextFunction) => {
         where: { id: req.user.id },
     });
 
-    if (!user) return res.status(401).json({
+    if (!user || !user.password) return res.status(401).json({
         msg: 'Incorrect password',
         code: 92294,
     });
 
-    bcrypt.compare(password, user.password, (err, compare) => {
+    bcrypt.compare(password, user.password as string, (err, compare) => {
         if (err) return res.status(401).json({
             msg: 'Incorrect password',
             code: 96294,

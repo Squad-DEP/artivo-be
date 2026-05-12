@@ -3,7 +3,6 @@ import { Strategy as LocalStrategy } from 'passport-local';
 import { User } from './../models/User';
 import passport from 'passport';
 import bcrypt from 'bcryptjs';
-import * as fs from 'fs';
 
 /**
  * @openapi
@@ -26,7 +25,10 @@ passport.use(new LocalStrategy({
 
     if (!user) return cb(null, false);
 
-    return bcrypt.compare(password, user.get('password'), (err, compare) => {
+    const userPassword = user.get('password');
+    if (!userPassword) return cb(null, false);
+
+    return bcrypt.compare(password, userPassword as string, (err, compare) => {
         if (err) throw err;
 
         if (compare) {
