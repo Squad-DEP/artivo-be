@@ -84,8 +84,19 @@ CREATE TABLE payment_logs (
     created_at TIMESTAMP DEFAULT NOW()
 );
 
+-- Job subscriptions (workers subscribe to job types)
+CREATE TABLE job_subscriptions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    worker_id UUID REFERENCES users(id) ON DELETE CASCADE,
+    job_type_id UUID REFERENCES job_types(id) ON DELETE CASCADE,
+    created_at TIMESTAMP DEFAULT NOW(),
+    UNIQUE(worker_id, job_type_id)
+);
+
 -- Indexes for performance
 CREATE INDEX idx_users_role ON users(role);
 CREATE INDEX idx_jobs_worker ON jobs(worker_id);
 CREATE INDEX idx_jobs_customer ON jobs(customer_id);
 CREATE INDEX idx_job_requests_status ON job_requests(status);
+CREATE INDEX idx_job_subscriptions_worker ON job_subscriptions(worker_id);
+CREATE INDEX idx_job_subscriptions_job_type ON job_subscriptions(job_type_id);
