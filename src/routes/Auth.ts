@@ -7,6 +7,7 @@ import { v4 as uuidv4 } from 'uuid';
 import bcrypt from 'bcryptjs';
 import express from 'express';
 import crypto from 'crypto';
+import { VirtualAccountService } from '../services/squad/VirtualAccountService';
 
 export const app = express.Router();
 
@@ -314,6 +315,10 @@ app.get('/auth/verify-email/:emailVerificationKey', [
             emailVerified: true,
             emailVerificationKey: null,
         });
+
+        // Create virtual account after email verification
+        const virtualAccountService = new VirtualAccountService();
+        await virtualAccountService.createVirtualAccountForUser(user);
 
         if (req.query.redirect === '1') return res.redirect(`${process.env.FRONTEND_URL}?email_verified=1`);
 

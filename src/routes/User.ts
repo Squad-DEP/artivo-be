@@ -181,3 +181,34 @@ app.post('/user/update-password', [
         return next(error);
     }
 });
+
+/**
+ * @openapi
+ * /user/virtual-account:
+ *   get:
+ *     description: Get user's virtual account details
+ *     tags: [User]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Returns virtual account details
+ */
+app.get('/user/virtual-account', [
+    passport.authenticate('jwt', { session: false }),
+], async (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    try {
+        const { VirtualAccountService } = await import('../services/squad/VirtualAccountService');
+        const virtualAccountService = new VirtualAccountService();
+        
+        const virtualAccount = await virtualAccountService.getVirtualAccountByUserId(req.user.id);
+
+        if (!virtualAccount) {
+            return res.status(404).json({ msg: 'Virtual account not found' });
+        }
+
+        return res.json({ virtual_account: virtualAccount });
+    } catch (error) {
+        return next(error);
+    }
+});

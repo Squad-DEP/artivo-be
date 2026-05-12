@@ -9,6 +9,7 @@ import morgan from 'morgan';
 import helmet from 'helmet';
 import cors from 'cors';
 import './models/Relationships';
+import { validateSquadConfig } from './config/squad.config';
 
 
 ////////////////////////////////////////////////
@@ -19,9 +20,13 @@ import { app as AI } from './routes/AI';
 import { app as Matching } from './routes/Matching';
 import { app as Customer } from './routes/Customer';
 import { app as Worker } from './routes/Worker';
+import { app as Public } from './routes/Public';
+import { app as Squad } from './routes/Squad';
 
-
+const v1 = 'api/v1'
+const publicV1 = '/api/v1/public';
 const isTest = (process.env.NODE_ENV === 'test');
+
 if (!isTest) console.log('*************************************');
 if (!isTest) console.log(`* express-api v${version}`);
 if (!isTest) console.log('*');
@@ -71,12 +76,15 @@ if (!isTest) app.use(rateLimit({
 
 ////////////////////////////////////////////////
 // HTTP
-app.use('/api/v1', Auth);
-app.use('/api/v1', User);
-app.use('/api/v1', AI);
-app.use('/api/v1', Matching);
-app.use('/api/v1', Customer);
-app.use('/api/v1', Worker);
+
+app.use(v1, Auth);
+app.use(v1, User);
+app.use(v1, AI);
+app.use(v1, Matching);
+app.use(v1, Customer);
+app.use(v1, Worker);
+app.use(publicV1, Public);  // Public endpoints (no auth required)
+app.use(v1, Squad);  // Squad webhooks and payment verification
 app.use(ErrorHandler);
 
 export default app;
