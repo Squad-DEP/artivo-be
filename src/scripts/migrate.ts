@@ -1,10 +1,4 @@
 #!/usr/bin/env ts-node
-/**
- * Database Migration Runner
- * Runs all .up.sql files in order
- * Usage: ts-node src/scripts/migrate.ts [up|down|reset]
- */
-
 import 'dotenv/config';
 import { Sequelize } from 'sequelize';
 import { readFileSync, readdirSync, existsSync } from 'fs';
@@ -31,6 +25,43 @@ const sequelize = new Sequelize({
 
 const migrationsDir = join(__dirname, '../database/migrations');
 
+async function ensureMigrationsTable() {
+    try {
+        await sequelize.query(`
+            CREATE TABLE IF NOT EXISTS schema_migrations (
+                id SERIAL PRIMARY KEY,
+                filename VARCHAR(255) UNIQUE NOT NULL,
+                executed_at TIMESTAMP DEFAULT NOW()
+            );
+        `);
+    } catch (error: any) {
+        console.error('Failed to create migrations table:', error.message);
+        throw error;
+    }
+}
+
+async function getExecutedMigrations(): Promise<string[]> {
+    try {
+        const [results] = await sequelize.query(
+            'SELECT filename FROM schema_migrations ORDER BY filename'
+        );
+        return (results as any[]).map(r => r.filename);
+    } catch (error) {
+        return [];
+    }
+}
+
+async function markMigrationExecuted(filename: string) {
+    await sequelize.query(
+        'INSERT INTO schema_migrations (filename) VALUES (?)',
+        { replacements: [filename] }
+    );
+}
+
+async function clearMigrationHistory() {
+    await sequelize.query('DELETE FROM schema_migrations');
+}
+
 async function runMigrations() {
     try {
         console.log('Connecting to database...');
@@ -51,28 +82,48 @@ async function runMigrations() {
         if (command === 'up' || command === 'reset') {
             console.log('🔺 Running UP migrations...');
             
-            // Get all .up.sql files (excluding seed files) and sort them
+            await ensureMigrationsTable();
+            
+            const executedMigrations = command === 'reset' 
+                ? [] 
+                : await getExecutedMigrations();
+
+            if (command === 'reset') {
+                await clearMigrationHistory();
+            }
+            
             const files = readdirSync(migrationsDir)
                 .filter(f => f.endsWith('.up.sql') && !f.includes('seed'))
                 .sort();
 
+            let ranCount = 0;
             for (const file of files) {
+                if (executedMigrations.includes(file)) {
+                    console.log(`   ⏭️  ${file} (already executed)`);
+                    continue;
+                }
+
                 console.log(`   Running: ${file}`);
                 const filePath = join(migrationsDir, file);
                 const sql = readFileSync(filePath, 'utf8');
                 
                 try {
                     await sequelize.query(sql);
+                    await markMigrationExecuted(file);
                     console.log(`   ✅ ${file}`);
+                    ranCount++;
                 } catch (error: any) {
                     console.error(`   ❌ ${file}: ${error.message}`);
                     throw error;
                 }
             }
             
-            console.log('\n✅ All migrations completed successfully!');
+            if (ranCount === 0) {
+                console.log('\n✅ No new migrations to run');
+            } else {
+                console.log(`\n✅ Ran ${ranCount} migration(s) successfully!`);
+            }
 
-            // Run seed files if reset
             if (command === 'reset') {
                 console.log('\n🌱 Running SEED files...');
                 const seedFiles = readdirSync(migrationsDir)

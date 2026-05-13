@@ -4,12 +4,10 @@ import ErrorHandler from './providers/ErrorHandler';
 import { rateLimit } from 'express-rate-limit';
 import fileUpload from 'express-fileupload';
 import express from 'express';
-// import cron from 'node-cron';
 import morgan from 'morgan';
 import helmet from 'helmet';
 import cors from 'cors';
 import './models/Relationships';
-import { validateSquadConfig } from './config/squad.config';
 
 
 ////////////////////////////////////////////////
@@ -22,6 +20,7 @@ import { app as Customer } from './routes/Customer';
 import { app as Worker } from './routes/Worker';
 import { app as Public } from './routes/Public';
 import { app as Squad } from './routes/Squad';
+import { app as Storage } from './routes/Storage';
 
 const v1 = 'api/v1'
 const publicV1 = '/api/v1/public';
@@ -85,6 +84,7 @@ app.use(v1, Customer);
 app.use(v1, Worker);
 app.use(publicV1, Public);  // Public endpoints (no auth required)
 app.use(v1, Squad);  // Squad webhooks and payment verification
+app.use(v1, Storage);  // R2 storage and documents
 app.use(ErrorHandler);
 
 export default app;
