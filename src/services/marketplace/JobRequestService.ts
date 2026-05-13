@@ -1,4 +1,5 @@
-import { JobRequest, JobRequestModel } from '../../models/JobRequest';
+import { JobRequest, JobRequestModel, JobRequestStatus } from '../../models/JobRequest';
+import { JOB_REQUEST_STATUS } from '../../constants/statuses';
 
 export interface CreateJobRequestDTO {
     customerId: string;
@@ -11,40 +12,35 @@ export interface CreateJobRequestDTO {
 
 export class JobRequestService {
     async createJobRequest(data: CreateJobRequestDTO): Promise<JobRequestModel> {
-        const jobRequest = await JobRequest.create({
+        return JobRequest.create({
             customerId: data.customerId,
             jobTypeId: data.jobTypeId,
             title: data.title,
             description: data.description || null,
             location: data.location || null,
             budget: data.budget || null,
-            status: 'open',
+            status: JOB_REQUEST_STATUS.OPEN,
         });
-
-        return jobRequest;
     }
 
     async getJobRequestById(id: string): Promise<JobRequestModel | null> {
-        return await JobRequest.findByPk(id);
+        return JobRequest.findByPk(id);
     }
 
     async getJobRequestsByCustomer(customerId: string): Promise<JobRequestModel[]> {
-        return await JobRequest.findAll({
+        return JobRequest.findAll({
             where: { customerId },
             order: [['createdAt', 'DESC']],
         });
     }
 
-    async updateJobRequestStatus(id: string, status: 'open' | 'assigned' | 'completed' | 'cancelled'): Promise<void> {
-        await JobRequest.update(
-            { status },
-            { where: { id } }
-        );
+    async updateJobRequestStatus(id: string, status: JobRequestStatus): Promise<void> {
+        await JobRequest.update({ status }, { where: { id } });
     }
 
     async verifyJobRequestOwnership(id: string, customerId: string): Promise<boolean> {
         const jobRequest = await JobRequest.findOne({
-            where: { id, customerId, status: 'open' },
+            where: { id, customerId, status: JOB_REQUEST_STATUS.OPEN },
         });
         return jobRequest !== null;
     }

@@ -1,6 +1,7 @@
 import { Job, JobModel, JobStatus } from '../../models/Job';
 import { JobRequestService } from './JobRequestService';
 import { sequelize } from '../../providers/db';
+import { JOB_STATUS, JOB_REQUEST_STATUS, USER_ROLE } from '../../constants/statuses';
 
 export interface CreateJobDTO {
     jobRequestId: string;
@@ -20,27 +21,22 @@ export class JobService {
         const transaction = await sequelize.transaction();
 
         try {
-            // Get job request to extract customer_id if not provided
             let customerId = data.customerId;
             if (!customerId) {
                 const jobRequest = await this.jobRequestService.getJobRequestById(data.jobRequestId);
-                if (!jobRequest) {
-                    throw new Error('Job request not found');
-                }
+                if (!jobRequest) throw new Error('Job request not found');
                 customerId = jobRequest.customerId;
             }
 
-            // Create the job
             const job = await Job.create({
                 jobRequestId: data.jobRequestId,
                 workerId: data.workerId,
                 customerId,
                 amount: data.amount,
-                status: 'pending',
+                status: JOB_STATUS.PENDING,
             }, { transaction });
 
-            // Update job request status
-            await this.jobRequestService.updateJobRequestStatus(data.jobRequestId, 'assigned');
+            await this.jobRequestService.updateJobRequestStatus(data.jobRequestId, JOB_REQUEST_STATUS.ASSIGNED);
 
             await transaction.commit();
             return job;
@@ -51,18 +47,18 @@ export class JobService {
     }
 
     async getJobById(id: string): Promise<JobModel | null> {
-        return await Job.findByPk(id);
+        return Job.findByPk(id);
     }
 
     async getJobsByWorker(workerId: string): Promise<JobModel[]> {
-        return await Job.findAll({
+        return Job.findAll({
             where: { workerId },
             order: [['createdAt', 'DESC']],
         });
     }
 
     async getJobsByCustomer(customerId: string): Promise<JobModel[]> {
-        return await Job.findAll({
+        return Job.findAll({
             where: { customerId },
             order: [['createdAt', 'DESC']],
         });
@@ -70,11 +66,9 @@ export class JobService {
 
     async updateJobStatus(id: string, status: JobStatus): Promise<void> {
         const updateData: any = { status };
-        
-        if (status === 'completed') {
+        if (status === JOB_STATUS.COMPLETED) {
             updateData.completedAt = new Date();
         }
-
         await Job.update(updateData, { where: { id } });
     }
 
@@ -82,16 +76,14 @@ export class JobService {
         const transaction = await sequelize.transaction();
 
         try {
-            // Update job status
             await Job.update(
-                { status: 'completed', completedAt: new Date() },
+                { status: JOB_STATUS.COMPLETED, completedAt: new Date() },
                 { where: { id }, transaction }
             );
 
-            // Get job to update job request
             const job = await Job.findByPk(id, { transaction });
             if (job) {
-                await this.jobRequestService.updateJobRequestStatus(job.jobRequestId, 'completed');
+                await this.jobRequestService.updateJobRequestStatus(job.jobRequestId, JOB_REQUEST_STATUS.COMPLETED);
             }
 
             await transaction.commit();
@@ -102,7 +94,7 @@ export class JobService {
     }
 
     async verifyJobOwnership(id: string, userId: string, role: 'customer' | 'worker'): Promise<boolean> {
-        const whereClause = role === 'customer' 
+        const whereClause = role === USER_ROLE.CUSTOMER
             ? { id, customerId: userId }
             : { id, workerId: userId };
 

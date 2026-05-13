@@ -3,8 +3,10 @@ import { WorkerService, WorkerFeedFilters } from '../services/marketplace/Worker
 import { JobRequestService } from '../services/marketplace/JobRequestService';
 import { JobService } from '../services/marketplace/JobService';
 import { PaymentService } from '../services/marketplace/PaymentService';
+import { EscrowService } from '../services/marketplace/EscrowService';
 import { ReviewService } from '../services/marketplace/ReviewService';
 import MatchingService from '../services/matching/MatchingService';
+import { JOB_STATUS, USER_ROLE } from '../constants/statuses';
 
 export class CustomerController {
     constructor(
@@ -12,6 +14,7 @@ export class CustomerController {
         private jobRequestService: JobRequestService,
         private jobService: JobService,
         private paymentService: PaymentService,
+        private escrowService: EscrowService,
         private reviewService: ReviewService,
         private matchingService: typeof MatchingService
     ) {}
@@ -26,9 +29,7 @@ export class CustomerController {
 
             let workers = await this.workerService.getWorkerFeed(filters);
 
-            // If job_type_id provided, use AI matching
             if (filters.jobTypeId && workers.length > 0) {
-                // Convert workers to the format expected by MatchingService
                 const jobRequest = {
                     job_type_id: filters.jobTypeId,
                     location: filters.location || '',
@@ -51,14 +52,9 @@ export class CustomerController {
                     true
                 );
 
-                // Merge ranking with full worker data
                 const rankedWorkers = ranked.map(r => {
                     const worker = workers.find(w => w.id === r.worker_id);
-                    return {
-                        ...worker,
-                        match_score: r.match_score,
-                        match_explanation: r.explanation,
-                    };
+                    return { ...worker, match_score: r.match_score, match_explanation: r.explanation };
                 });
 
                 return res.json({ workers: rankedWorkers });
@@ -80,7 +76,6 @@ export class CustomerController {
                 location: req.body.location,
                 budget: req.body.budget,
             });
-
             return res.json({ job_request: jobRequest });
         } catch (error) {
             return next(error);
@@ -91,12 +86,10 @@ export class CustomerController {
         try {
             const { job_request_id, worker_id, amount } = req.body;
 
-            // Verify job request ownership
             const isOwner = await this.jobRequestService.verifyJobRequestOwnership(
                 job_request_id,
                 req.user.id
             );
-
             if (!isOwner) {
                 return res.status(404).json({ msg: 'Job request not found or already assigned' });
             }
@@ -108,32 +101,48 @@ export class CustomerController {
                 amount,
             });
 
-            return res.json({ job });
+            const escrow = await this.escrowService.createEscrow({
+                jobId: job.id,
+                customerId: req.user.id,
+                workerId: worker_id,
+                amount,
+            });
+
+            return res.json({ job, escrow });
         } catch (error) {
             return next(error);
         }
     }
 
-    async logPayment(req: express.Request, res: express.Response, next: express.NextFunction) {
+    /**
+     * Verify a Squad payment server-side before logging it.
+     * The frontend calls this after onSuccess fires from the Squad JS SDK.
+     */
+    async verifyPayment(req: express.Request, res: express.Response, next: express.NextFunction) {
         try {
-            const { job_id, squad_transaction_id, amount, status } = req.body;
+            const { job_id, transaction_reference } = req.body;
 
-            // Verify job ownership
-            const isOwner = await this.jobService.verifyJobOwnership(job_id, req.user.id, 'customer');
-
-            if (!isOwner) {
+            const job = await this.jobService.getJobById(job_id);
+            if (!job || job.customerId !== req.user.id) {
                 return res.status(404).json({ msg: 'Job not found' });
             }
 
-            const paymentLog = await this.paymentService.logPayment({
+            const paymentLog = await this.paymentService.verifyAndLogPayment({
                 jobId: job_id,
-                squadTransactionId: squad_transaction_id,
-                amount,
-                status,
+                squadTransactionReference: transaction_reference,
+                expectedAmountNgn: Number(job.amount),
             });
 
-            return res.json({ payment_log: paymentLog });
-        } catch (error) {
+            return res.json({ payment_log: paymentLog, msg: 'Payment verified and logged successfully' });
+        } catch (error: any) {
+            if (
+                error.message?.includes('not found') ||
+                error.message?.includes('mismatch') ||
+                error.message?.includes('Verification failed') ||
+                error.message?.includes('not a credit')
+            ) {
+                return res.status(400).json({ msg: error.message });
+            }
             return next(error);
         }
     }
@@ -142,16 +151,18 @@ export class CustomerController {
         try {
             const { job_id } = req.params;
 
-            // Verify job ownership
-            const isOwner = await this.jobService.verifyJobOwnership(job_id, req.user.id, 'customer');
-
-            if (!isOwner) {
-                return res.status(404).json({ msg: 'Job not found' });
-            }
+            const isOwner = await this.jobService.verifyJobOwnership(job_id, req.user.id, USER_ROLE.CUSTOMER);
+            if (!isOwner) return res.status(404).json({ msg: 'Job not found' });
 
             await this.jobService.completeJob(job_id);
 
-            return res.json({ success: true, msg: 'Job marked as completed' });
+            try {
+                await this.escrowService.releaseEscrow(job_id);
+            } catch (err: any) {
+                console.warn(`[CustomerController] Escrow release failed for job ${job_id}: ${err.message}`);
+            }
+
+            return res.json({ success: true, msg: 'Job marked as completed and escrow released' });
         } catch (error) {
             return next(error);
         }
@@ -161,14 +172,11 @@ export class CustomerController {
         try {
             const { job_id, rating, comment } = req.body;
 
-            // Get job details
             const job = await this.jobService.getJobById(job_id);
-
-            if (!job || job.customerId !== req.user.id || job.status !== 'completed') {
+            if (!job || job.customerId !== req.user.id || job.status !== JOB_STATUS.COMPLETED) {
                 return res.status(404).json({ msg: 'Job not found or not completed' });
             }
 
-            // Check if already reviewed
             const hasReviewed = await this.reviewService.hasReviewed(job_id, req.user.id);
             if (hasReviewed) {
                 return res.status(400).json({ msg: 'You have already reviewed this job' });

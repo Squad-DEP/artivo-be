@@ -21,6 +21,7 @@ import { app as Worker } from './routes/Worker';
 import { app as Public } from './routes/Public';
 import { app as Squad } from './routes/Squad';
 import { app as Storage } from './routes/Storage';
+import { app as Account } from './routes/Account';
 
 const v1 = '/api/v1'
 const publicV1 = '/api/v1/public';
@@ -85,6 +86,7 @@ app.use(v1, Worker);
 app.use(publicV1, Public);  // Public endpoints (no auth required)
 app.use(v1, Squad);  // Squad webhooks and payment verification
 app.use(v1, Storage);  // R2 storage and documents
+app.use(v1, Account); // Virtual account info, transactions, withdrawals
 app.use(ErrorHandler);
 
 export default app;
