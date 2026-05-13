@@ -47,6 +47,8 @@ app.get('/account/virtual-account', [
                 bank_name: account.bankName,
                 bank_code: account.bankCode,
                 customer_identifier: account.customerIdentifier,
+                balance: Number(account.balance ?? 0),
+                total_deposited: Number(account.totalDeposited ?? 0),
             },
         });
     } catch (error) {

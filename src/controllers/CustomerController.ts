@@ -94,6 +94,16 @@ export class CustomerController {
                 return res.status(404).json({ msg: 'Job request not found or already assigned' });
             }
 
+            // Require sufficient virtual account balance before proceeding
+            const balanceCheck = await this.escrowService.checkAndDeductBalance(req.user.id, amount);
+            if (!balanceCheck.ok) {
+                return res.status(402).json({
+                    msg: 'Insufficient balance. Please fund your virtual account before hiring.',
+                    available_balance: balanceCheck.balance,
+                    required: amount,
+                });
+            }
+
             const job = await this.jobService.createJob({
                 jobRequestId: job_request_id,
                 workerId: worker_id,
@@ -108,8 +118,15 @@ export class CustomerController {
                 amount,
             });
 
+            // Immediately fund the escrow since payment was deducted from balance
+            await this.escrowService.fundEscrow(job.id);
+            await this.jobService.updateJobStatus(job.id, JOB_STATUS.IN_PROGRESS);
+
             return res.json({ job, escrow });
-        } catch (error) {
+        } catch (error: any) {
+            if (error.message === 'Virtual account not found') {
+                return res.status(404).json({ msg: 'Virtual account not found. Please contact support.' });
+            }
             return next(error);
         }
     }
@@ -154,16 +171,28 @@ export class CustomerController {
             const isOwner = await this.jobService.verifyJobOwnership(job_id, req.user.id, USER_ROLE.CUSTOMER);
             if (!isOwner) return res.status(404).json({ msg: 'Job not found' });
 
-            await this.jobService.completeJob(job_id);
+            const result = await this.escrowService.confirmCompletion(job_id, USER_ROLE.CUSTOMER);
 
-            try {
-                await this.escrowService.releaseEscrow(job_id);
-            } catch (err: any) {
-                console.warn(`[CustomerController] Escrow release failed for job ${job_id}: ${err.message}`);
+            if (result.released) {
+                await this.jobService.completeJob(job_id);
+                return res.json({
+                    success: true,
+                    msg: 'Both parties confirmed. Job completed and escrow released to worker.',
+                    released: true,
+                });
             }
 
-            return res.json({ success: true, msg: 'Job marked as completed and escrow released' });
-        } catch (error) {
+            return res.json({
+                success: true,
+                msg: 'Your confirmation recorded. Waiting for worker to confirm.',
+                worker_confirmed: result.workerConfirmed,
+                customer_confirmed: result.customerConfirmed,
+                released: false,
+            });
+        } catch (error: any) {
+            if (error.message?.includes('Escrow not found') || error.message?.includes('payment must be confirmed')) {
+                return res.status(400).json({ msg: error.message });
+            }
             return next(error);
         }
     }

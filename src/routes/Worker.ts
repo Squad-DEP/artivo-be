@@ -5,6 +5,7 @@ import { WorkerController } from '../controllers/WorkerController';
 import { WorkerJobService } from '../services/marketplace/WorkerJobService';
 import { JobService } from '../services/marketplace/JobService';
 import { JobRequestService } from '../services/marketplace/JobRequestService';
+import { EscrowService } from '../services/marketplace/EscrowService';
 import { ReviewService } from '../services/marketplace/ReviewService';
 
 export const app = express.Router();
@@ -13,10 +14,11 @@ export const app = express.Router();
 const workerJobService = new WorkerJobService();
 const jobRequestService = new JobRequestService();
 const jobService = new JobService(jobRequestService);
+const escrowService = new EscrowService();
 const reviewService = new ReviewService();
 
 // Initialize controller
-const workerController = new WorkerController(workerJobService, jobService, reviewService);
+const workerController = new WorkerController(workerJobService, jobService, escrowService, reviewService);
 
 /**
  * @swagger

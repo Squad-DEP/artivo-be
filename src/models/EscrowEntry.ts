@@ -13,6 +13,8 @@ export interface EscrowEntryModel extends Model<InferAttributes<EscrowEntryModel
     status: CreationOptional<EscrowStatus>;
     fundedAt: CreationOptional<Date> | null;
     releasedAt: CreationOptional<Date> | null;
+    workerConfirmed: CreationOptional<boolean>;
+    customerConfirmed: CreationOptional<boolean>;
     createdAt: CreationOptional<Date>;
     updatedAt: CreationOptional<Date>;
 }
@@ -58,6 +60,18 @@ export const EscrowEntry = sequelize.define<EscrowEntryModel>('escrow_entry', {
         type: DataTypes.DATE,
         allowNull: true,
         field: 'released_at',
+    },
+    workerConfirmed: {
+        type: DataTypes.BOOLEAN,
+        allowNull: false,
+        defaultValue: false,
+        field: 'worker_confirmed',
+    },
+    customerConfirmed: {
+        type: DataTypes.BOOLEAN,
+        allowNull: false,
+        defaultValue: false,
+        field: 'customer_confirmed',
     },
     createdAt: {
         type: DataTypes.DATE,

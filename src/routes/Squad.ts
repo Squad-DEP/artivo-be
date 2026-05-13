@@ -80,29 +80,38 @@ async function processWebhook(payload: SquadWebhookPayload): Promise<void> {
         return;
     }
 
+    const amount = parseFloat(payload.principal_amount);
     const jobId = extractJobId(payload.remarks);
 
-    if (!jobId) {
-        console.warn('[Squad Webhook] No job ID found in remarks:', {
-            transaction_ref: payload.transaction_ref,
-            remarks: payload.remarks,
+    if (jobId) {
+        // Job payment via Squad SDK — log and fund escrow
+        await paymentService.logPayment({
+            jobId,
+            squadTransactionId: payload.transaction_ref,
+            amount,
+            status: 'success',
+        });
+
+        console.log(`[Squad Webhook] Payment logged and escrow funded: ${payload.transaction_ref} for job ${jobId}`, {
+            amount: payload.principal_amount,
         });
         return;
     }
 
-    // logPayment is idempotent and will fund the escrow automatically
-    await paymentService.logPayment({
-        jobId,
-        squadTransactionId: payload.transaction_ref,
-        amount: parseFloat(payload.principal_amount),
-        status: 'success',
-    });
+    // No job ID → this is a wallet top-up. Credit the user's balance.
+    const credited = await escrowService.creditBalanceByIdentifier(payload.customer_identifier, amount);
 
-    console.log(`[Squad Webhook] Payment logged and escrow funded: ${payload.transaction_ref} for job ${jobId}`, {
-        amount: payload.principal_amount,
-        settled: payload.settled_amount,
-        fee: payload.fee_charged,
-    });
+    if (credited) {
+        console.log(`[Squad Webhook] Wallet top-up credited: ${payload.transaction_ref}`, {
+            customer_identifier: payload.customer_identifier,
+            amount: payload.principal_amount,
+        });
+    } else {
+        console.warn('[Squad Webhook] Could not credit balance — virtual account not found:', {
+            customer_identifier: payload.customer_identifier,
+            transaction_ref: payload.transaction_ref,
+        });
+    }
 }
 
 /**

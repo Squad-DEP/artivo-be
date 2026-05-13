@@ -1,6 +1,7 @@
 import express from 'express';
 import { WorkerJobService } from '../services/marketplace/WorkerJobService';
 import { JobService } from '../services/marketplace/JobService';
+import { EscrowService } from '../services/marketplace/EscrowService';
 import { ReviewService } from '../services/marketplace/ReviewService';
 import { JOB_STATUS, USER_ROLE } from '../constants/statuses';
 
@@ -8,6 +9,7 @@ export class WorkerController {
     constructor(
         private workerJobService: WorkerJobService,
         private jobService: JobService,
+        private escrowService: EscrowService,
         private reviewService: ReviewService
     ) {}
 
@@ -72,13 +74,28 @@ export class WorkerController {
             const isOwner = await this.jobService.verifyJobOwnership(job_id, req.user.id, USER_ROLE.WORKER);
             if (!isOwner) return res.status(404).json({ msg: 'Job not found' });
 
-            await this.jobService.updateJobStatus(job_id, JOB_STATUS.IN_PROGRESS);
+            const result = await this.escrowService.confirmCompletion(job_id, USER_ROLE.WORKER);
+
+            if (result.released) {
+                await this.jobService.completeJob(job_id);
+                return res.json({
+                    success: true,
+                    msg: 'Both parties confirmed. Job completed and payment released to your account.',
+                    released: true,
+                });
+            }
 
             return res.json({
                 success: true,
-                msg: 'Job marked as in progress. Waiting for customer confirmation.',
+                msg: 'Your confirmation recorded. Waiting for customer to confirm.',
+                worker_confirmed: result.workerConfirmed,
+                customer_confirmed: result.customerConfirmed,
+                released: false,
             });
-        } catch (error) {
+        } catch (error: any) {
+            if (error.message?.includes('Escrow not found') || error.message?.includes('payment must be confirmed')) {
+                return res.status(400).json({ msg: error.message });
+            }
             return next(error);
         }
     }
