@@ -45,6 +45,14 @@ passport.use(new JWTStrategy({
         ExtractJWT.fromUrlQueryParameter('token'),
     ]),
     secretOrKey: process.env.JWT_SECRET || 'your-secret-key-change-in-production',
-}, (jwtPayload, cb) => cb(null, jwtPayload)));
+}, async (jwtPayload, cb) => {
+    try {
+        const user = await User.findByPk(jwtPayload.id);
+        if (!user) return cb(null, false);
+        return cb(null, jwtPayload);
+    } catch (err) {
+        return cb(err);
+    }
+}));
 
 export default passport;

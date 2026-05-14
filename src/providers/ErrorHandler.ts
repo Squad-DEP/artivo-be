@@ -41,6 +41,10 @@ export default (err: any, req: Request, res: Response, next: NextFunction) => {
         });
     }
 
+    if (err.status === 404) {
+        return res.status(404).json({ msg: err.message || 'Not found', code: 404 });
+    }
+
     if (err.name === 'SequelizeForeignKeyConstraintError') {
         return res.status(422).json({
             msg: 'Invalid reference - related record does not exist',

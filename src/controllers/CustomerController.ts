@@ -166,6 +166,7 @@ export class CustomerController {
                 worker_name: string;
                 photo_url: string | null;
                 proposed_amount: number;
+                proposed_amount_max: number | null;
                 status: string;
                 created_at: Date;
             }>(
@@ -175,6 +176,7 @@ export class CustomerController {
                     u.full_name AS worker_name,
                     wp.photo_url,
                     jp.proposed_amount,
+                    jp.proposed_amount_max,
                     jp.status,
                     jp.created_at
                 FROM job_proposals jp

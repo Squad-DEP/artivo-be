@@ -79,6 +79,11 @@ export class WorkerJobService {
             JOIN job_types jt ON jr.job_type_id = jt.id
             WHERE jr.status = 'open'
             AND jr.customer_id != $1
+            AND NOT EXISTS (
+                SELECT 1 FROM job_proposals jp
+                WHERE jp.job_request_id = jr.id
+                AND jp.worker_id = $1
+            )
             ORDER BY jr.created_at DESC
         `;
 

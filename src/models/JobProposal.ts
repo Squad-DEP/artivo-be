@@ -9,6 +9,7 @@ export interface JobProposalModel extends Model<InferAttributes<JobProposalModel
     jobRequestId: string;
     workerId: string;
     proposedAmount: number;
+    proposedAmountMax: CreationOptional<number | null>;
     status: CreationOptional<JobProposalStatus>;
     createdAt: CreationOptional<Date>;
 }
@@ -34,6 +35,11 @@ export const JobProposal = sequelize.define<JobProposalModel>('job_proposal', {
         type: DataTypes.DECIMAL(10, 2),
         allowNull: false,
         field: 'proposed_amount',
+    },
+    proposedAmountMax: {
+        type: DataTypes.DECIMAL(10, 2),
+        allowNull: true,
+        field: 'proposed_amount_max',
     },
     status: {
         type: DataTypes.STRING(20),

@@ -167,6 +167,7 @@ app.post('/worker/accept-job', [
     passport.authenticate('jwt', { session: false }),
     body('job_request_id').exists().isUUID(),
     body('proposed_amount').exists().isFloat({ min: 0 }),
+    body('proposed_amount_max').optional().isFloat({ min: 0 }),
 ], async (req: express.Request, res: express.Response, next: express.NextFunction) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) return res.status(422).json({ errors: errors.mapped() });
@@ -380,6 +381,7 @@ app.get('/worker/proposals', [
                 jp.id,
                 jp.job_request_id,
                 jp.proposed_amount,
+                jp.proposed_amount_max,
                 jp.status,
                 jp.created_at,
                 jr.title,

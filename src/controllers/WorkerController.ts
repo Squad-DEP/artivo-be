@@ -57,13 +57,14 @@ export class WorkerController {
 
     async acceptJob(req: express.Request, res: express.Response, next: express.NextFunction) {
         try {
-            const { job_request_id, proposed_amount } = req.body;
+            const { job_request_id, proposed_amount, proposed_amount_max } = req.body;
 
             // Upsert: update amount if a proposal already exists for this worker+job_request
             const [proposal] = await JobProposal.upsert({
                 jobRequestId: job_request_id,
                 workerId: req.user.id,
                 proposedAmount: proposed_amount,
+                proposedAmountMax: proposed_amount_max ?? null,
                 status: 'pending',
             }, {
                 conflictFields: ['job_request_id', 'worker_id'] as any,
@@ -76,6 +77,7 @@ export class WorkerController {
                     job_request_id: proposal.jobRequestId,
                     worker_id: proposal.workerId,
                     proposed_amount: proposal.proposedAmount,
+                    proposed_amount_max: proposal.proposedAmountMax ?? null,
                     status: proposal.status,
                 },
             });
