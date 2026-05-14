@@ -128,7 +128,7 @@ export class WorkerController {
 
     async getMyJobs(req: express.Request, res: express.Response, next: express.NextFunction) {
         try {
-            const jobs = await this.jobService.getJobsByWorker(req.user.id);
+            const jobs = await this.jobService.getEnrichedJobsByWorker(req.user.id);
             return res.json({ jobs });
         } catch (error) {
             return next(error);
@@ -158,6 +158,15 @@ export class WorkerController {
             });
 
             return res.json({ review, msg: 'Customer rated successfully' });
+        } catch (error) {
+            return next(error);
+        }
+    }
+
+    async getStats(req: express.Request, res: express.Response, next: express.NextFunction) {
+        try {
+            const stats = await this.workerJobService.getWorkerStats(req.user.id);
+            return res.json(stats);
         } catch (error) {
             return next(error);
         }

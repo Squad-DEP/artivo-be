@@ -10,6 +10,7 @@ import { EscrowService } from '../services/marketplace/EscrowService';
 import { ReviewService } from '../services/marketplace/ReviewService';
 import { PayoutService } from '../services/marketplace/PayoutService';
 import MatchingService from '../services/matching/MatchingService';
+import { HireService } from '../services/marketplace/HireService';
 
 export const app = express.Router();
 
@@ -21,6 +22,7 @@ const paymentService = new PaymentService(jobService, escrowService);
 const reviewService = new ReviewService();
 const payoutService = new PayoutService();
 const matchingService = MatchingService;
+const hireService = new HireService(jobService, jobRequestService, escrowService);
 
 const customerController = new CustomerController(
     workerService,
@@ -30,6 +32,7 @@ const customerController = new CustomerController(
     escrowService,
     reviewService,
     matchingService,
+    hireService,
 );
 
 /**

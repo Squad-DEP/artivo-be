@@ -6,13 +6,9 @@ import { PaymentService } from '../services/marketplace/PaymentService';
 import { EscrowService } from '../services/marketplace/EscrowService';
 import { ReviewService } from '../services/marketplace/ReviewService';
 import { PayoutService } from '../services/marketplace/PayoutService';
+import { HireService, HirePaymentMethod } from '../services/marketplace/HireService';
 import MatchingService from '../services/matching/MatchingService';
 import { JOB_STATUS, USER_ROLE } from '../constants/statuses';
-import { JobProposal } from '../models/JobProposal';
-import { JobRequest } from '../models/JobRequest';
-import { Job } from '../models/Job';
-import { QueryTypes } from 'sequelize';
-import { sequelize } from '../providers/db';
 
 export class CustomerController {
     constructor(
@@ -23,6 +19,7 @@ export class CustomerController {
         private escrowService: EscrowService,
         private reviewService: ReviewService,
         private matchingService: typeof MatchingService,
+        private hireService: HireService,
         private payoutService: PayoutService = new PayoutService()
     ) {}
 
@@ -93,26 +90,23 @@ export class CustomerController {
     async hire(req: express.Request, res: express.Response, next: express.NextFunction) {
         try {
             let { job_request_id, worker_id, amount, proposal_id, payment_method } = req.body;
-            const paymentMethod: 'online' | 'offline' = payment_method === 'offline' ? 'offline' : 'online';
+            const paymentMethod: HirePaymentMethod = payment_method === 'offline' ? 'offline' : 'online';
 
+            // Resolve proposal → concrete fields
             if (proposal_id) {
-                const proposal = await JobProposal.findByPk(proposal_id);
-                if (!proposal) return res.status(404).json({ msg: 'Proposal not found' });
-                job_request_id = proposal.jobRequestId;
-                worker_id = proposal.workerId;
-                amount = Number(proposal.proposedAmount);
+                const resolved = await this.hireService.resolveProposal(proposal_id);
+                if (!resolved) return res.status(404).json({ msg: 'Proposal not found' });
+                job_request_id = resolved.jobRequestId;
+                worker_id = resolved.workerId;
+                amount = resolved.amount;
             }
 
-            // Idempotency: if a pending_payment job already exists for this customer+job_request
-            // (e.g. payment was cancelled and they're retrying), return it instead of erroring.
-            const existingPendingJob = await Job.findOne({
-                where: { jobRequestId: job_request_id, customerId: req.user.id, status: JOB_STATUS.PENDING_PAYMENT },
-            });
-            if (existingPendingJob) {
-                const existingEscrow = await this.escrowService.getEscrowByJobId(existingPendingJob.id);
+            // Idempotency: return existing pending job if payment was cancelled mid-flow
+            const existing = await this.hireService.findExistingPendingJob(job_request_id, req.user.id);
+            if (existing) {
                 return res.json({
-                    job: existingPendingJob,
-                    escrow: existingEscrow,
+                    job: existing.job,
+                    escrow: existing.escrow,
                     requires_payment: true,
                 });
             }
@@ -120,43 +114,18 @@ export class CustomerController {
             const isOwner = await this.jobRequestService.verifyJobRequestOwnership(job_request_id, req.user.id);
             if (!isOwner) return res.status(404).json({ msg: 'Job request not found or already assigned' });
 
-            const { job, escrow } = await sequelize.transaction(async (t) => {
-                // Online: job starts in pending_payment — escrow pending until Squad confirms
-                // Offline: job starts in_progress immediately — no Squad payment
-                const initialStatus = paymentMethod === 'offline' ? JOB_STATUS.IN_PROGRESS : JOB_STATUS.PENDING_PAYMENT;
-
-                const job = await this.jobService.createJob(
-                    { jobRequestId: job_request_id, workerId: worker_id, customerId: req.user.id, amount, paymentMethod },
-                    t
-                );
-
-                await this.jobService.updateJobStatus(job.id, initialStatus, t);
-
-                // Create escrow entry — funded immediately for offline, pending for online
-                const escrow = paymentMethod === 'offline'
-                    ? await this.escrowService.createEscrowFunded(
-                        { jobId: job.id, customerId: req.user.id, workerId: worker_id, amount }, t
-                      )
-                    : await this.escrowService.createEscrow(
-                        { jobId: job.id, customerId: req.user.id, workerId: worker_id, amount }, t
-                      );
-
-                if (proposal_id) {
-                    await JobProposal.update({ status: 'accepted' }, { where: { id: proposal_id }, transaction: t });
-                    await JobProposal.update(
-                        { status: 'rejected' },
-                        { where: { jobRequestId: job_request_id, status: 'pending' }, transaction: t }
-                    );
-                }
-
-                return { job, escrow };
+            const result = await this.hireService.executeHire({
+                jobRequestId: job_request_id,
+                workerId: worker_id,
+                customerId: req.user.id,
+                amount,
+                paymentMethod,
             });
 
             return res.json({
-                job,
-                escrow,
-                // Tell the frontend whether to open Squad checkout
-                requires_payment: paymentMethod === 'online',
+                job: result.job,
+                escrow: result.escrow,
+                requires_payment: result.requiresPayment,
             });
         } catch (error: any) {
             return next(error);
@@ -166,55 +135,14 @@ export class CustomerController {
     async getJobRequestProposals(req: express.Request, res: express.Response, next: express.NextFunction) {
         try {
             const { id: jobRequestId } = req.params;
-
-            // Verify the job request belongs to this customer
-            const jobRequest = await JobRequest.findOne({
-                where: { id: jobRequestId, customerId: req.user.id },
-            });
-            if (!jobRequest) {
-                return res.status(404).json({ msg: 'Job request not found' });
-            }
-
-            const proposals = await sequelize.query<{
-                id: string;
-                worker_id: string;
-                worker_name: string;
-                photo_url: string | null;
-                proposed_amount: number;
-                proposed_amount_max: number | null;
-                status: string;
-                created_at: Date;
-            }>(
-                `SELECT
-                    jp.id,
-                    jp.worker_id,
-                    u.full_name AS worker_name,
-                    wp.photo_url,
-                    jp.proposed_amount,
-                    jp.proposed_amount_max,
-                    jp.status,
-                    jp.created_at
-                FROM job_proposals jp
-                JOIN users u ON u.id = jp.worker_id
-                LEFT JOIN worker_profiles wp ON wp.user_id = jp.worker_id
-                WHERE jp.job_request_id = $1
-                ORDER BY jp.created_at ASC`,
-                {
-                    bind: [jobRequestId],
-                    type: QueryTypes.SELECT,
-                }
-            );
-
+            const proposals = await this.jobRequestService.getProposalsForJobRequest(jobRequestId, req.user.id);
+            if (proposals === null) return res.status(404).json({ msg: 'Job request not found' });
             return res.json({ proposals });
         } catch (error) {
             return next(error);
         }
     }
 
-    /**
-     * Verify a Squad payment server-side before logging it.
-     * The frontend calls this after onSuccess fires from the Squad JS SDK.
-     */
     async verifyPayment(req: express.Request, res: express.Response, next: express.NextFunction) {
         try {
             const { job_id, transaction_reference } = req.body;
@@ -314,23 +242,7 @@ export class CustomerController {
 
     async getMyJobRequests(req: express.Request, res: express.Response, next: express.NextFunction) {
         try {
-            const jobRequests = await sequelize.query<{
-                id: string; title: string; description: string; location: string | null;
-                budget: number | null; status: string; job_type_name: string;
-                proposal_count: number; created_at: Date;
-            }>(
-                `SELECT jr.id, jr.title, jr.description, jr.location, jr.budget, jr.status,
-                        jt.name AS job_type_name,
-                        COALESCE(COUNT(jp.id), 0)::int AS proposal_count,
-                        jr.created_at
-                 FROM job_requests jr
-                 JOIN job_types jt ON jr.job_type_id = jt.id
-                 LEFT JOIN job_proposals jp ON jp.job_request_id = jr.id
-                 WHERE jr.customer_id = $1
-                 GROUP BY jr.id, jt.name
-                 ORDER BY jr.created_at DESC`,
-                { bind: [req.user.id], type: QueryTypes.SELECT }
-            );
+            const jobRequests = await this.jobRequestService.getJobRequestsWithProposalCount(req.user.id);
             return res.json({ job_requests: jobRequests });
         } catch (error) {
             return next(error);
@@ -339,7 +251,7 @@ export class CustomerController {
 
     async getMyJobs(req: express.Request, res: express.Response, next: express.NextFunction) {
         try {
-            const jobs = await this.jobService.getJobsByCustomer(req.user.id);
+            const jobs = await this.jobService.getEnrichedJobsByCustomer(req.user.id);
             return res.json({ jobs });
         } catch (error) {
             return next(error);

@@ -2,7 +2,7 @@ import { Job, JobModel, JobStatus } from '../../models/Job';
 import { JobRequest } from '../../models/JobRequest';
 import { JobRequestService } from './JobRequestService';
 import { sequelize } from '../../providers/db';
-import { Transaction } from 'sequelize';
+import { Transaction, QueryTypes } from 'sequelize';
 import { JOB_STATUS, JOB_REQUEST_STATUS, USER_ROLE } from '../../constants/statuses';
 
 export interface CustomerJobStatsShape {
@@ -173,5 +173,52 @@ export class JobService {
 
         const job = await Job.findOne({ where: whereClause });
         return job !== null;
+    }
+
+    async getEnrichedJobsByCustomer(customerId: string): Promise<{
+        id: string; job_request_id: string; worker_id: string; worker_name: string;
+        worker_photo: string | null; title: string; description: string;
+        location: string | null; amount: number; payment_method: string;
+        status: string; created_at: Date; worker_confirmed: boolean; customer_confirmed: boolean;
+    }[]> {
+        return sequelize.query(`
+            SELECT j.id, j.job_request_id, j.worker_id,
+                   uw.full_name AS worker_name, wp.photo_url AS worker_photo,
+                   jr.title, jr.description, jr.location,
+                   j.amount, j.payment_method, j.status, j.created_at,
+                   COALESCE(e.worker_confirmed, false) AS worker_confirmed,
+                   COALESCE(e.customer_confirmed, false) AS customer_confirmed
+            FROM jobs j
+            JOIN job_requests jr ON jr.id = j.job_request_id
+            JOIN users uw ON uw.id = j.worker_id
+            LEFT JOIN worker_profiles wp ON wp.user_id = j.worker_id
+            LEFT JOIN escrow_entries e ON e.job_id = j.id
+            WHERE j.customer_id = $1
+            AND j.status NOT IN ('pending_payment', 'cancelled')
+            ORDER BY j.created_at DESC
+        `, { bind: [customerId], type: QueryTypes.SELECT }) as Promise<any[]>;
+    }
+
+    async getEnrichedJobsByWorker(workerId: string): Promise<{
+        id: string; job_request_id: string; customer_id: string; customer_name: string;
+        title: string; description: string; location: string | null;
+        amount: number; payment_method: string; status: string; created_at: Date;
+        worker_confirmed: boolean; customer_confirmed: boolean;
+    }[]> {
+        return sequelize.query(`
+            SELECT j.id, j.job_request_id, j.customer_id,
+                   uc.full_name AS customer_name,
+                   jr.title, jr.description, jr.location,
+                   j.amount, j.payment_method, j.status, j.created_at,
+                   COALESCE(e.worker_confirmed, false) AS worker_confirmed,
+                   COALESCE(e.customer_confirmed, false) AS customer_confirmed
+            FROM jobs j
+            JOIN job_requests jr ON jr.id = j.job_request_id
+            JOIN users uc ON uc.id = j.customer_id
+            LEFT JOIN escrow_entries e ON e.job_id = j.id
+            WHERE j.worker_id = $1
+            AND j.status NOT IN ('pending_payment', 'cancelled')
+            ORDER BY j.created_at DESC
+        `, { bind: [workerId], type: QueryTypes.SELECT }) as Promise<any[]>;
     }
 }

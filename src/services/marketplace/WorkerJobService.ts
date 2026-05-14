@@ -113,6 +113,39 @@ export class WorkerJobService {
         };
     }
 
+    async getWorkerProposals(workerId: string): Promise<{
+        id: string; job_request_id: string; proposed_amount: number;
+        proposed_amount_max: number | null; status: string; created_at: string;
+        title: string; description: string; location: string; budget: number;
+        job_type: string; customer_name: string; job_request_status: string;
+    }[]> {
+        return sequelize.query(`
+            SELECT jp.id, jp.job_request_id, jp.proposed_amount, jp.proposed_amount_max,
+                   jp.status, jp.created_at,
+                   jr.title, jr.description, jr.location, jr.budget,
+                   jt.name AS job_type,
+                   u.full_name AS customer_name,
+                   jr.status AS job_request_status
+            FROM job_proposals jp
+            JOIN job_requests jr ON jp.job_request_id = jr.id
+            JOIN job_types jt ON jr.job_type_id = jt.id
+            JOIN users u ON jr.customer_id = u.id
+            WHERE jp.worker_id = $1
+            ORDER BY jp.created_at DESC
+        `, { bind: [workerId], type: QueryTypes.SELECT }) as Promise<any[]>;
+    }
+
+    async getWorkerProfileWithStats(userId: string): Promise<{ phone: string | null; email: string; average_rating: number } | null> {
+        const results = await sequelize.query<{ phone: string | null; email: string; average_rating: number }>(
+            `SELECT u.phone, u.email, COALESCE(rs.average_rating, 0) AS average_rating
+             FROM users u
+             LEFT JOIN reputation_scores rs ON rs.user_id = u.id
+             WHERE u.id = $1`,
+            { bind: [userId], type: QueryTypes.SELECT }
+        );
+        return results[0] ?? null;
+    }
+
     async getAllOpenJobs(): Promise<JobRequestForWorker[]> {
         const query = `
             SELECT 

@@ -3,11 +3,7 @@ import passport from './../providers/Passport';
 import express from 'express';
 import { WorkerProfile } from '../models/WorkerProfile';
 import { WorkerBankAccount } from '../models/WorkerBankAccount';
-import { JobProposal } from '../models/JobProposal';
-import { JobRequest } from '../models/JobRequest';
 import { User } from '../models/User';
-import { QueryTypes } from 'sequelize';
-import { sequelize } from '../providers/db';
 import { WorkerController } from '../controllers/WorkerController';
 import { WorkerJobService } from '../services/marketplace/WorkerJobService';
 import { JobService } from '../services/marketplace/JobService';
@@ -297,12 +293,7 @@ app.get('/worker/jobs/stream', [
 app.get('/jobs/stats/worker', [
     passport.authenticate('jwt', { session: false }),
 ], async (req: express.Request, res: express.Response, next: express.NextFunction) => {
-    try {
-        const stats = await workerJobService.getWorkerStats(req.user.id);
-        return res.json(stats);
-    } catch (error) {
-        return next(error);
-    }
+    return workerController.getStats(req, res, next);
 });
 
 async function findOrCreateWorkerProfile(userId: string) {
@@ -329,18 +320,7 @@ app.get('/worker/profile/me', [
     try {
         const profile = await findOrCreateWorkerProfile(req.user.id);
 
-        // Fetch phone + email from users, rating from reputation_scores in one query
-        const [extra] = await sequelize.query<{
-            phone: string | null;
-            email: string;
-            average_rating: number;
-        }>(
-            `SELECT u.phone, u.email, COALESCE(rs.average_rating, 0) AS average_rating
-             FROM users u
-             LEFT JOIN reputation_scores rs ON rs.user_id = u.id
-             WHERE u.id = $1`,
-            { bind: [req.user.id], type: QueryTypes.SELECT }
-        );
+        const extra = await workerJobService.getWorkerProfileWithStats(req.user.id);
 
         return res.json({
             display_name: profile.displayName,
@@ -363,42 +343,7 @@ app.get('/worker/proposals', [
     passport.authenticate('jwt', { session: false }),
 ], async (req: express.Request, res: express.Response, next: express.NextFunction) => {
     try {
-        const proposals = await sequelize.query<{
-            id: string;
-            job_request_id: string;
-            proposed_amount: number;
-            status: string;
-            created_at: string;
-            title: string;
-            description: string;
-            location: string;
-            budget: number;
-            job_type: string;
-            customer_name: string;
-            job_request_status: string;
-        }>(`
-            SELECT
-                jp.id,
-                jp.job_request_id,
-                jp.proposed_amount,
-                jp.proposed_amount_max,
-                jp.status,
-                jp.created_at,
-                jr.title,
-                jr.description,
-                jr.location,
-                jr.budget,
-                jt.name as job_type,
-                u.full_name as customer_name,
-                jr.status as job_request_status
-            FROM job_proposals jp
-            JOIN job_requests jr ON jp.job_request_id = jr.id
-            JOIN job_types jt ON jr.job_type_id = jt.id
-            JOIN users u ON jr.customer_id = u.id
-            WHERE jp.worker_id = $1
-            ORDER BY jp.created_at DESC
-        `, { bind: [req.user.id], type: QueryTypes.SELECT });
-
+        const proposals = await workerJobService.getWorkerProposals(req.user.id);
         return res.json({ proposals });
     } catch (error) {
         return next(error);
