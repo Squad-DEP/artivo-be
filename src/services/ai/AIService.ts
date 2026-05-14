@@ -90,8 +90,11 @@ class AIService {
                 "profession": "string or null (translate trade name to English, e.g., 'Alajota/Mekaniki' -> 'Mechanic')",
                 "skills": ["array of strings translated to standard English keywords"],
                 "yearsOfExperience": number or null,
+                "bio": "string or null",
+                "phoneNumber": "number or null",
+                "tagline": "string or null",
                 "cityLocation": "string or null (e.g., 'Yaba, Lagos')",
-                "expectedHourlyRate": "string or null (keep currency units clear, e.g., '5000 naira')",
+                "avgPay": "string or null (keep currency units clear, e.g., '5000 naira')",
                 "availability": "string or null (translated to English)",
                 "primaryLanguageUsed": "string (e.g., 'Yoruba', 'Pidgin', 'Igbo', 'Hausa', 'English')",
                 "confidenceScore": "string ('high' | 'medium' | 'low' based on how complete or clear the audio/text was)"
