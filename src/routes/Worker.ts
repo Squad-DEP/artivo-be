@@ -1,6 +1,7 @@
 import { body, param, validationResult } from 'express-validator';
 import passport from './../providers/Passport';
 import express from 'express';
+import { WorkerProfile } from '../models/WorkerProfile';
 import { WorkerController } from '../controllers/WorkerController';
 import { WorkerJobService } from '../services/marketplace/WorkerJobService';
 import { JobService } from '../services/marketplace/JobService';
@@ -289,6 +290,28 @@ app.get('/jobs/stats/worker', [
     try {
         const stats = await workerJobService.getWorkerStats(req.user.id);
         return res.json(stats);
+    } catch (error) {
+        return next(error);
+    }
+});
+
+app.patch('/worker/profile/photo', [
+    passport.authenticate('jwt', { session: false }),
+    body('photo_url').notEmpty().isURL().withMessage('Valid photo_url is required'),
+], async (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    try {
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) {
+            return res.status(422).json({ errors: errors.mapped() });
+        }
+
+        const profile = await WorkerProfile.findOne({ where: { userId: req.user.id } });
+        if (!profile) {
+            return res.status(404).json({ msg: 'Worker profile not found' });
+        }
+
+        await profile.update({ photoUrl: req.body.photo_url });
+        return res.json({ photo_url: profile.photoUrl });
     } catch (error) {
         return next(error);
     }
