@@ -2,6 +2,7 @@ import { body, param, validationResult } from 'express-validator';
 import passport from './../providers/Passport';
 import express from 'express';
 import { WorkerProfile } from '../models/WorkerProfile';
+import { User } from '../models/User';
 import { WorkerController } from '../controllers/WorkerController';
 import { WorkerJobService } from '../services/marketplace/WorkerJobService';
 import { JobService } from '../services/marketplace/JobService';
@@ -295,14 +296,29 @@ app.get('/jobs/stats/worker', [
     }
 });
 
+async function findOrCreateWorkerProfile(userId: string) {
+    const user = await User.unscoped().findOne({ where: { id: userId } });
+    if (!user) throw new Error('User not found');
+
+    const shareSlug = user.fullName
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-|-$/g, '')
+        + '-' + userId.slice(0, 6);
+
+    const [profile] = await WorkerProfile.findOrCreate({
+        where: { userId },
+        defaults: { userId, displayName: user.fullName, shareSlug, photoUrl: null },
+    });
+
+    return profile;
+}
+
 app.get('/worker/profile/me', [
     passport.authenticate('jwt', { session: false }),
 ], async (req: express.Request, res: express.Response, next: express.NextFunction) => {
     try {
-        const profile = await WorkerProfile.findOne({ where: { userId: req.user.id } });
-        if (!profile) {
-            return res.status(404).json({ msg: 'Worker profile not found' });
-        }
+        const profile = await findOrCreateWorkerProfile(req.user.id);
         return res.json({
             display_name: profile.displayName,
             photo_url: profile.photoUrl,
@@ -326,27 +342,7 @@ app.patch('/worker/profile/photo', [
             return res.status(422).json({ errors: errors.mapped() });
         }
 
-        const user = await (await import('../models/User')).User.findOne({
-            where: { id: req.user.id },
-        });
-        if (!user) return res.status(404).json({ msg: 'User not found' });
-
-        const shareSlug = user.fullName
-            .toLowerCase()
-            .replace(/[^a-z0-9]+/g, '-')
-            .replace(/^-|-$/g, '')
-            + '-' + req.user.id.slice(0, 6);
-
-        const [profile] = await WorkerProfile.findOrCreate({
-            where: { userId: req.user.id },
-            defaults: {
-                userId: req.user.id,
-                displayName: user.fullName,
-                shareSlug,
-                photoUrl: null,
-            },
-        });
-
+        const profile = await findOrCreateWorkerProfile(req.user.id);
         await profile.update({ photoUrl: req.body.photo_url });
         return res.json({ photo_url: profile.photoUrl });
     } catch (error) {

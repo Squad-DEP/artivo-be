@@ -1,4 +1,4 @@
-import { body, validationResult } from 'express-validator';
+import { body, validationResult, matchedData } from 'express-validator';
 import passport from './../providers/Passport';
 import express from 'express';
 import { VirtualAccountService } from '../services/squad/VirtualAccountService';
@@ -74,9 +74,22 @@ app.get('/account/virtual-account', [
  */
 app.post('/account/ensure-setup', [
     passport.authenticate('jwt', { session: false }),
+    body('bvn').notEmpty().isLength({ min: 11, max: 11 }).withMessage('BVN must be 11 digits'),
+    body('dob').notEmpty().isDate({ format: 'YYYY-MM-DD' }).withMessage('DOB must be YYYY-MM-DD'),
+    body('gender').isIn(['1', '2']).withMessage('Gender must be 1 (Male) or 2 (Female)'),
+    body('address').notEmpty().isLength({ min: 5 }).withMessage('Address is required'),
 ], async (req: express.Request, res: express.Response, next: express.NextFunction) => {
     try {
-        const account = await virtualAccountService.ensureSetupForUser(req.user.id);
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) {
+            return res.status(422).json({ errors: errors.mapped() });
+        }
+
+        const { bvn, dob, gender, address } = matchedData(req) as {
+            bvn: string; dob: string; gender: '1' | '2'; address: string;
+        };
+
+        const account = await virtualAccountService.ensureSetupForUser(req.user.id, { bvn, dob, gender, address });
 
         if (!account) {
             return res.status(503).json({ msg: 'Could not create virtual account. Squad may not be configured.' });

@@ -14,7 +14,10 @@ export class VirtualAccountService {
      * Create virtual account for a user after email verification
      * Idempotent: Safe to call multiple times for same user
      */
-    async createVirtualAccountForUser(user: UserModel): Promise<VirtualAccountModel | null> {
+    async createVirtualAccountForUser(
+        user: UserModel,
+        kyc?: { bvn: string; dob: string; gender: '1' | '2'; address: string }
+    ): Promise<VirtualAccountModel | null> {
         try {
             // Check if Squad is configured
             if (!SquadService.isConfigured()) {
@@ -34,17 +37,21 @@ export class VirtualAccountService {
             // Parse full name
             const { firstName, lastName } = this.parseFullName(user.fullName);
 
-            // Create virtual account via Squad API
+            // dob from KYC is YYYY-MM-DD; Squad expects MM/DD/YYYY
+            const rawDob = kyc?.dob || user.dob || '1990-01-01';
+            const [y, m, d] = rawDob.split('-');
+            const dob = `${m}/${d}/${y}`;
+
             const squadResponse = await this.squadService.createVirtualAccount({
                 customer_identifier: user.id,
                 first_name: firstName,
                 last_name: lastName,
                 mobile_num: user.phone || this.getDefaultPhoneNumber(),
                 email: user.email,
-                // Squad expects DD/MM/YYYY. Use stored dob if available, else demo placeholder.
-                dob: user.dob
-                    ? user.dob.split('-').reverse().join('/')   // YYYY-MM-DD → DD/MM/YYYY
-                    : '01/01/1990',
+                dob,
+                bvn: kyc?.bvn || '00000000000',
+                gender: kyc?.gender || '1',
+                address: kyc?.address || '1 Artivo Street',
             });
 
             // Validate Squad response
@@ -69,22 +76,21 @@ export class VirtualAccountService {
      * Ensure a user's email is verified and virtual account exists.
      * Creates the virtual account if it doesn't exist yet.
      */
-    async ensureSetupForUser(userId: string): Promise<VirtualAccountModel | null> {
+    async ensureSetupForUser(
+        userId: string,
+        kyc: { bvn: string; dob: string; gender: '1' | '2'; address: string }
+    ): Promise<VirtualAccountModel | null> {
         const user = await User.unscoped().findOne({ where: { id: userId } });
-        if (!user) {
-            throw new Error('User not found');
-        }
+        if (!user) throw new Error('User not found');
 
         if (!user.emailVerified) {
             await user.update({ emailVerified: true, emailVerificationKey: null });
         }
 
-        const account = await this.getVirtualAccountByUserId(userId);
-        if (account) {
-            return account;
-        }
+        const existing = await this.getVirtualAccountByUserId(userId);
+        if (existing) return existing;
 
-        return this.createVirtualAccountForUser(user);
+        return this.createVirtualAccountForUser(user, kyc);
     }
 
     /**

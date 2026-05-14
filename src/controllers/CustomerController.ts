@@ -24,6 +24,7 @@ export class CustomerController {
             const filters: WorkerFeedFilters = {
                 location: req.query.location as string,
                 jobTypeId: req.query.job_type_id as string,
+                query: req.query.query as string,
                 limit: req.query.limit ? parseInt(req.query.limit as string) : 20,
             };
 

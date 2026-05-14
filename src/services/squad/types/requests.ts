@@ -4,10 +4,10 @@ export interface CreateVirtualAccountRequest {
     last_name: string;
     mobile_num: string;
     email: string;
-    bvn?: string;
-    dob?: string;
-    address?: string;
-    gender?: '1' | '2';
+    bvn: string;          // 11-digit BVN — must match customer records
+    dob: string;          // MM/DD/YYYY — must match BVN records
+    gender: '1' | '2';   // 1 = Male, 2 = Female — must match BVN records
+    address: string;
     beneficiary_account?: string;
 }
 

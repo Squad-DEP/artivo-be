@@ -20,12 +20,13 @@ export interface WorkerFeedItem {
 export interface WorkerFeedFilters {
     location?: string;
     jobTypeId?: string;
+    query?: string;
     limit?: number;
 }
 
 export class WorkerService {
     async getWorkerFeed(filters: WorkerFeedFilters): Promise<WorkerFeedItem[]> {
-        const { location, limit = 20 } = filters;
+        const { location, query, limit = 20 } = filters;
 
         let whereClause = "WHERE u.role = 'worker'";
         const params: any[] = [];
@@ -34,6 +35,12 @@ export class WorkerService {
         if (location) {
             whereClause += ` AND wp.location ILIKE $${paramIndex}`;
             params.push(`%${location}%`);
+            paramIndex++;
+        }
+
+        if (query) {
+            whereClause += ` AND (u.full_name ILIKE $${paramIndex} OR wp.display_name ILIKE $${paramIndex} OR wp.bio ILIKE $${paramIndex} OR EXISTS (SELECT 1 FROM unnest(wp.skills) s WHERE s ILIKE $${paramIndex}))`;
+            params.push(`%${query}%`);
             paramIndex++;
         }
 

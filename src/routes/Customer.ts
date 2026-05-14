@@ -41,6 +41,7 @@ app.get('/customer/feed', [
     passport.authenticate('jwt', { session: false }),
     query('job_type_id').optional(),
     query('location').optional(),
+    query('query').optional().trim(),
     query('limit').optional().isInt({ min: 1, max: 50 }).toInt(),
 ], async (req: express.Request, res: express.Response, next: express.NextFunction) => {
     const errors = validationResult(req);
