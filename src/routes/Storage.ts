@@ -8,10 +8,20 @@ export const app = express.Router();
 
 const documentService = new DocumentService();
 
-app.get('/storage/presigned-url', [
+const DOCUMENT_TYPES = ['profile_photo', 'certificate', 'business_card', 'generated_card', 'other'] as const;
+
+/**
+ * POST /storage/initiate-upload
+ *
+ * Creates a DB record (status=pending) first, then returns a presigned upload URL.
+ * The client must call PATCH /documents/:id/confirm after the upload succeeds.
+ */
+app.post('/storage/initiate-upload', [
     passport.authenticate('jwt', { session: false }),
-    query('fileName').notEmpty().withMessage('fileName is required'),
-    query('contentType').notEmpty().withMessage('contentType is required'),
+    body('fileName').notEmpty().withMessage('fileName is required'),
+    body('contentType').notEmpty().withMessage('contentType is required'),
+    body('documentType').isIn(DOCUMENT_TYPES).withMessage('Invalid documentType'),
+    body('fileSize').optional().isInt({ min: 1 }),
 ], async (req: express.Request, res: express.Response, next: express.NextFunction) => {
     try {
         if (!isStorageConfigured()) {
@@ -23,56 +33,65 @@ app.get('/storage/presigned-url', [
             return res.status(422).json({ errors: errors.mapped() });
         }
 
-        const data = matchedData(req);
-        const result = await documentService.getPresignedUploadUrl(
-            req.user.id,
-            data.fileName,
-            data.contentType
-        );
-
-        return res.json(result);
-    } catch (error) {
-        return next(error);
-    }
-});
-
-app.post('/documents', [
-    passport.authenticate('jwt', { session: false }),
-    body('documentType').isIn(['profile_photo', 'certificate', 'business_card', 'generated_card', 'other']),
-    body('fileUrl').notEmpty(),
-    body('fileName').optional(),
-    body('fileSize').optional().isInt(),
-    body('mimeType').optional(),
-    body('metadata').optional().isObject(),
-], async (req: express.Request, res: express.Response, next: express.NextFunction) => {
-    try {
-        const errors = validationResult(req);
-        if (!errors.isEmpty()) {
-            return res.status(422).json({ errors: errors.mapped() });
-        }
-
         const data = matchedData(req) as {
-            documentType: 'profile_photo' | 'certificate' | 'business_card' | 'generated_card' | 'other';
-            fileUrl: string;
-            fileName?: string;
+            fileName: string;
+            contentType: string;
+            documentType: typeof DOCUMENT_TYPES[number];
             fileSize?: number;
-            mimeType?: string;
-            metadata?: Record<string, any>;
         };
-        const document = await documentService.createDocument({
-            ...data,
+
+        const result = await documentService.initiateUpload({
             userId: req.user.id,
+            ...data,
         });
 
-        return res.status(201).json(document);
+        return res.status(201).json(result);
     } catch (error) {
         return next(error);
     }
 });
 
+/**
+ * PATCH /documents/:id/confirm
+ *
+ * Called by the client after a successful R2 upload.
+ * Marks the document status as 'uploaded'.
+ */
+app.patch('/documents/:id/confirm', [
+    passport.authenticate('jwt', { session: false }),
+], async (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    try {
+        const document = await documentService.confirmUpload(req.params.id, req.user.id);
+        return res.json(document);
+    } catch (error) {
+        return next(error);
+    }
+});
+
+/**
+ * PATCH /documents/:id/failed
+ *
+ * Called by the client if the R2 upload fails, so the pending record is cleaned up.
+ */
+app.patch('/documents/:id/failed', [
+    passport.authenticate('jwt', { session: false }),
+], async (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    try {
+        await documentService.markFailed(req.params.id, req.user.id);
+        return res.json({ success: true });
+    } catch (error) {
+        return next(error);
+    }
+});
+
+/**
+ * GET /documents
+ *
+ * Returns only uploaded documents for the authenticated user.
+ */
 app.get('/documents', [
     passport.authenticate('jwt', { session: false }),
-    query('documentType').optional().isIn(['profile_photo', 'certificate', 'business_card', 'generated_card', 'other']),
+    query('documentType').optional().isIn(DOCUMENT_TYPES),
 ], async (req: express.Request, res: express.Response, next: express.NextFunction) => {
     try {
         const errors = validationResult(req);
@@ -82,19 +101,21 @@ app.get('/documents', [
 
         const data = matchedData(req);
         const documents = await documentService.getUserDocuments(req.user.id, data.documentType);
-
         return res.json(documents);
     } catch (error) {
         return next(error);
     }
 });
 
+/**
+ * GET /documents/:id
+ */
 app.get('/documents/:id', [
     passport.authenticate('jwt', { session: false }),
 ], async (req: express.Request, res: express.Response, next: express.NextFunction) => {
     try {
         const document = await documentService.getDocumentById(req.params.id);
-        
+
         if (!document) {
             return res.status(404).json({ msg: 'Document not found' });
         }
@@ -109,6 +130,11 @@ app.get('/documents/:id', [
     }
 });
 
+/**
+ * DELETE /documents/:id
+ *
+ * Deletes the DB record and removes the file from R2.
+ */
 app.delete('/documents/:id', [
     passport.authenticate('jwt', { session: false }),
 ], async (req: express.Request, res: express.Response, next: express.NextFunction) => {

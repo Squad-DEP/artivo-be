@@ -9,8 +9,11 @@ export interface IStorageProvider {
         userId: string,
         fileName: string,
         contentType: string,
-        expiresIn?: number
+        expiresIn?: number,
+        documentType?: string
     ): Promise<PresignedUploadResult>;
 
+    deleteObject(fileKey: string, isPublic?: boolean): Promise<void>;
     getPublicUrl(fileKey: string): string;
+    getPublicBucketUrl(fileKey: string): string;
 }

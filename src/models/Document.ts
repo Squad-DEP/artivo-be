@@ -5,16 +5,18 @@ export interface DocumentAttributes {
     id: string;
     userId: string;
     documentType: 'profile_photo' | 'certificate' | 'business_card' | 'generated_card' | 'other';
+    fileKey: string;
     fileUrl: string;
     fileName?: string;
     fileSize?: number;
     mimeType?: string;
+    uploadStatus: 'pending' | 'uploaded' | 'failed';
     metadata?: Record<string, any>;
     createdAt?: Date;
     updatedAt?: Date;
 }
 
-export interface DocumentCreationAttributes extends Optional<DocumentAttributes, 'id' | 'createdAt' | 'updatedAt'> {}
+export interface DocumentCreationAttributes extends Optional<DocumentAttributes, 'id' | 'uploadStatus' | 'createdAt' | 'updatedAt'> {}
 
 export interface DocumentModel extends Model<DocumentAttributes, DocumentCreationAttributes>, DocumentAttributes {}
 
@@ -34,6 +36,11 @@ export const Document = sequelize.define<DocumentModel>('Document', {
         allowNull: false,
         field: 'document_type',
     },
+    fileKey: {
+        type: DataTypes.STRING(500),
+        allowNull: false,
+        field: 'file_key',
+    },
     fileUrl: {
         type: DataTypes.TEXT,
         allowNull: false,
@@ -50,6 +57,12 @@ export const Document = sequelize.define<DocumentModel>('Document', {
     mimeType: {
         type: DataTypes.STRING(100),
         field: 'mime_type',
+    },
+    uploadStatus: {
+        type: DataTypes.STRING(20),
+        allowNull: false,
+        defaultValue: 'pending',
+        field: 'upload_status',
     },
     metadata: {
         type: DataTypes.JSONB,
