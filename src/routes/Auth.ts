@@ -213,6 +213,10 @@ app.post('/auth/sign-up', [
         .default(''),
     body('phone')
         .optional(),
+    body('dob')
+        .optional()
+        .isDate({ format: 'YYYY-MM-DD' })
+        .withMessage('dob must be a valid date in YYYY-MM-DD format'),
     body('role')
         .exists()
         .isIn(['worker', 'customer']),
@@ -236,6 +240,7 @@ app.post('/auth/sign-up', [
             id: userID,
             email: data.email,
             phone: data.phone || null,
+            dob: data.dob || null,
             fullName,
             role: data.role,
             password: bcrypt.hashSync(data.password, bcrypt.genSaltSync(10)),

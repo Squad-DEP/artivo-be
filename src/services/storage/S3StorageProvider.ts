@@ -24,6 +24,10 @@ export class S3StorageProvider implements IStorageProvider {
                 secretAccessKey: storageConfig.secretAccessKey,
             },
             forcePathStyle: true,
+            // Disable SDK-level checksum injection — R2 doesn't require them and
+            // the browser can't compute CRC32 on a bare fetch PUT.
+            requestChecksumCalculation: 'WHEN_REQUIRED',
+            responseChecksumValidation: 'WHEN_REQUIRED',
         });
     }
 

@@ -11,6 +11,7 @@ export interface DocumentAttributes {
     fileSize?: number;
     mimeType?: string;
     uploadStatus: 'pending' | 'uploaded' | 'failed';
+    description?: string;
     metadata?: Record<string, any>;
     createdAt?: Date;
     updatedAt?: Date;
@@ -57,6 +58,10 @@ export const Document = sequelize.define<DocumentModel>('Document', {
     mimeType: {
         type: DataTypes.STRING(100),
         field: 'mime_type',
+    },
+    description: {
+        type: DataTypes.TEXT,
+        allowNull: true,
     },
     uploadStatus: {
         type: DataTypes.STRING(20),

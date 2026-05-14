@@ -41,6 +41,10 @@ export class VirtualAccountService {
                 last_name: lastName,
                 mobile_num: user.phone || this.getDefaultPhoneNumber(),
                 email: user.email,
+                // Squad expects DD/MM/YYYY. Use stored dob if available, else demo placeholder.
+                dob: user.dob
+                    ? user.dob.split('-').reverse().join('/')   // YYYY-MM-DD → DD/MM/YYYY
+                    : '01/01/1990',
             });
 
             // Validate Squad response

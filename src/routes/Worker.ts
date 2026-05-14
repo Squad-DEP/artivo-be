@@ -295,6 +295,27 @@ app.get('/jobs/stats/worker', [
     }
 });
 
+app.get('/worker/profile/me', [
+    passport.authenticate('jwt', { session: false }),
+], async (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    try {
+        const profile = await WorkerProfile.findOne({ where: { userId: req.user.id } });
+        if (!profile) {
+            return res.status(404).json({ msg: 'Worker profile not found' });
+        }
+        return res.json({
+            display_name: profile.displayName,
+            photo_url: profile.photoUrl,
+            bio: profile.bio,
+            skills: profile.skills,
+            location: profile.location,
+            share_slug: profile.shareSlug,
+        });
+    } catch (error) {
+        return next(error);
+    }
+});
+
 app.patch('/worker/profile/photo', [
     passport.authenticate('jwt', { session: false }),
     body('photo_url').notEmpty().isURL().withMessage('Valid photo_url is required'),
@@ -305,10 +326,26 @@ app.patch('/worker/profile/photo', [
             return res.status(422).json({ errors: errors.mapped() });
         }
 
-        const profile = await WorkerProfile.findOne({ where: { userId: req.user.id } });
-        if (!profile) {
-            return res.status(404).json({ msg: 'Worker profile not found' });
-        }
+        const user = await (await import('../models/User')).User.findOne({
+            where: { id: req.user.id },
+        });
+        if (!user) return res.status(404).json({ msg: 'User not found' });
+
+        const shareSlug = user.fullName
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, '-')
+            .replace(/^-|-$/g, '')
+            + '-' + req.user.id.slice(0, 6);
+
+        const [profile] = await WorkerProfile.findOrCreate({
+            where: { userId: req.user.id },
+            defaults: {
+                userId: req.user.id,
+                displayName: user.fullName,
+                shareSlug,
+                photoUrl: null,
+            },
+        });
 
         await profile.update({ photoUrl: req.body.photo_url });
         return res.json({ photo_url: profile.photoUrl });

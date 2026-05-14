@@ -22,6 +22,7 @@ app.post('/storage/initiate-upload', [
     body('contentType').notEmpty().withMessage('contentType is required'),
     body('documentType').isIn(DOCUMENT_TYPES).withMessage('Invalid documentType'),
     body('fileSize').optional().isInt({ min: 1 }),
+    body('description').optional().isString().isLength({ max: 500 }),
 ], async (req: express.Request, res: express.Response, next: express.NextFunction) => {
     try {
         if (!isStorageConfigured()) {
@@ -38,6 +39,7 @@ app.post('/storage/initiate-upload', [
             contentType: string;
             documentType: typeof DOCUMENT_TYPES[number];
             fileSize?: number;
+            description?: string;
         };
 
         const result = await documentService.initiateUpload({

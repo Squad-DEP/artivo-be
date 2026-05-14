@@ -31,6 +31,7 @@ interface UserModel extends Model<InferAttributes<UserModel>, InferCreationAttri
     email: string;
     phone: CreationOptional<string> | null;
     fullName: string;
+    dob: CreationOptional<string> | null; // ISO date string YYYY-MM-DD, stored as DATE in DB
     role: 'worker' | 'customer';
     password: CreationOptional<string> | null;
     passwordResetKey: CreationOptional<string> | null;
@@ -54,6 +55,10 @@ const User = sequelize.define<UserModel>('user', {
     },
     phone: {
         type: DataTypes.STRING(20),
+        allowNull: true,
+    },
+    dob: {
+        type: DataTypes.DATEONLY,
         allowNull: true,
     },
     fullName: {

@@ -15,8 +15,9 @@ export class DocumentService {
         contentType: string;
         documentType: DocumentCreationAttributes['documentType'];
         fileSize?: number;
+        description?: string;
     }) {
-        const { userId, fileName, contentType, documentType, fileSize } = params;
+        const { userId, fileName, contentType, documentType, fileSize, description } = params;
 
         const { uploadUrl, fileKey, publicUrl } = await this.storageProvider.getPresignedUploadUrl(
             userId,
@@ -34,6 +35,7 @@ export class DocumentService {
             fileName,
             fileSize,
             mimeType: contentType,
+            description: description || undefined,
             uploadStatus: 'pending',
         });
 
