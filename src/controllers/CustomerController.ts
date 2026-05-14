@@ -123,7 +123,7 @@ export class CustomerController {
                         { jobId: job.id, customerId: req.user.id, workerId: worker_id, amount }, t
                       )
                     : await this.escrowService.createEscrow(
-                        { jobId: job.id, customerId: req.user.id, workerId: worker_id, amount }
+                        { jobId: job.id, customerId: req.user.id, workerId: worker_id, amount }, t
                       );
 
                 if (proposal_id) {

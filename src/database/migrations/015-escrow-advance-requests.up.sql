@@ -9,3 +9,7 @@ CREATE TABLE IF NOT EXISTS escrow_advance_requests (
     requested_at    TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
     approved_at     TIMESTAMPTZ
 );
+
+CREATE INDEX IF NOT EXISTS idx_escrow_advance_job ON escrow_advance_requests(job_id);
+CREATE INDEX IF NOT EXISTS idx_escrow_advance_worker ON escrow_advance_requests(worker_id);
+CREATE INDEX IF NOT EXISTS idx_escrow_advance_status ON escrow_advance_requests(status);

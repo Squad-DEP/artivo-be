@@ -109,6 +109,75 @@ app.post('/ai/chat', [
 
 /**
  * @openapi
+ * /ai/extract-job/voice:
+ *   post:
+ *     description: Extract job details from voice input
+ *     tags: [AI]
+ *     security:
+ *       - bearerAuth: []
+ */
+app.post('/ai/extract-job/voice', [
+    passport.authenticate('jwt', { session: false }),
+    body('audioData').exists().notEmpty().withMessage('Audio data is required'),
+], async (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    try {
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) return res.status(422).json({ errors: errors.mapped() });
+
+        const { audioData } = matchedData(req);
+        
+        // Get available job types
+        const jobTypes = await onboardingService.getJobTypes();
+        
+        const cleanAudio = onboardingService.sanitizeAudioData(audioData);
+        const result = await AIService.extractJobDescription(cleanAudio, jobTypes);
+
+        if (!result.success) {
+            return res.status(500).json({ msg: 'Failed to extract job details from audio', error: result.error });
+        }
+
+        return res.json({ success: true, data: result.data });
+    } catch (error) {
+        return next(error);
+    }
+});
+
+/**
+ * @openapi
+ * /ai/extract-job/text:
+ *   post:
+ *     description: Extract job details from text input
+ *     tags: [AI]
+ *     security:
+ *       - bearerAuth: []
+ */
+app.post('/ai/extract-job/text', [
+    passport.authenticate('jwt', { session: false }),
+    body('text').exists().notEmpty().withMessage('Text input is required'),
+], async (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    try {
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) return res.status(422).json({ errors: errors.mapped() });
+
+        const { text } = matchedData(req);
+        
+        // Get available job types
+        const jobTypes = await onboardingService.getJobTypes();
+        
+        const result = await AIService.extractJobDescription(text, jobTypes);
+
+        if (!result.success) {
+            return res.status(500).json({ msg: 'Failed to extract job details from text', error: result.error });
+        }
+
+        return res.json({ success: true, data: result.data });
+    } catch (error) {
+        return next(error);
+    }
+});
+
+/**
+ * @openapi
  * /ai/onboard/save:
  *   post:
  *     description: >
