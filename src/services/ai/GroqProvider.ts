@@ -51,7 +51,7 @@ export class GroqProvider implements IAIProvider {
                 });
 
                 const content = response.choices[0]?.message?.content || '{}';
-                console.log("Groq final response")
+                console.log("Groq final response");
                 return {
                     success: true,
                     response: content,

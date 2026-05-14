@@ -1,61 +1,58 @@
 import 'dotenv/config'; 
-import { createIdentityCard } from "../../src/services/business_card/hybrid"; 
+import { identityCardService } from "../../src/services/business_card/hybrid"; 
 import fs from "fs";
 import path from "path";
 
 const runTest = async () => {
     const mockArtisans = [
         {
-            username: "iron_man_99",
-            artisan_name: "Babatunde 'The Forge' Lawal",
-            trade: "welding",
-            location: "Oshodi Industrial Scheme",
-            tagline: "Precision arcs and structural integrity",
-            contact: "+234 803 999 8888",
-            verified_by: ["Lagos Welders Guild", "Artivo"],
-            headshot_url: "https://xsgames.co/randomusers/assets/avatars/male/22.jpg" 
+            // CASE: The Long Name (Tests your drawName wrap & shrink logic)
+            username: "tech_titan",
+            artisan_name: "Oluwaseun Christopher-Janus Abdulsalam-Okonkwo", 
+            trade: "teacher",
+            location: "Lekki Free Trade Zone, Block A14, Phase 2",
+            contact: "+234 901 000 0000",
+            headshot_url: "https://xsgames.co/randomusers/assets/avatars/male/1.jpg"
+        }/*,
+        {
+            // CASE: The Fallback King (No image + Unknown trade)
+            // Tests drawInitialsAvatar and THEME_PROMPTS['default']
+            username: "ghost_builder",
+            artisan_name: "Musa Yar'Adua",
+            trade: "cobbler", // Not in your TRADE_ACCENTS or THEME_PROMPTS
+            location: "Kano Pillars Way",
+            contact: "080-NO-IMAGE",
+            headshot_url: "" // Empty string to trigger catch block
         },
         {
-            username: "green_thumb_ng",
-            artisan_name: "Amaka Onyebuchi",
-            trade: "landscaping",
-            location: "Banana Island, Ikoyi",
-            tagline: "Transforming spaces into lush paradises",
-            contact: "+234 701 222 3333",
-            verified_by: ["Horticulture Society"],
-            headshot_url: "https://xsgames.co/randomusers/assets/avatars/female/18.jpg" 
+            // CASE: Special Characters & Short Name
+            username: "dr_k",
+            artisan_name: "Dr. K",
+            trade: "tailoring",
+            location: "Surulere, Lagos",
+            contact: "+234 810 555 2222",
+            headshot_url: "https://xsgames.co/randomusers/assets/avatars/female/5.jpg"
         },
         {
-            username: "cool_air_pro",
-            artisan_name: "Segun Arinze",
-            trade: "hvac",
-            location: "Gbagada Phase 2",
-            tagline: "Industrial chilling & maintenance",
-            contact: "+234 905 444 5555",
-            verified_by: ["Council of Engineers"],
-            headshot_url: "https://xsgames.co/randomusers/assets/avatars/male/51.jpg" 
+            // CASE: Heavy Industrial Theme (Testing flux prompt complexity)
+            username: "grease_monkey",
+            artisan_name: "Chidi 'The Wrench' Eze",
+            trade: "mechanic",
+            location: "Ladipo Auto Market, Mushin",
+            contact: "0803- Ladipo - 1",
+            headshot_url: "https://xsgames.co/randomusers/assets/avatars/male/70.jpg"
         },
         {
-            username: "chef_k",
-            artisan_name: "Korede 'Five-Star' Bello",
-            trade: "cooking",
-            location: "Victoria Island",
-            tagline: "Gourmet local & continental dishes",
-            contact: "+234 812 666 7777",
-            verified_by: ["Culinary Arts Hub"],
-            headshot_url: "https://xsgames.co/randomusers/assets/avatars/male/65.jpg" 
-        },
-        {
-            username: "clean_queen",
-            artisan_name: "Folashade Tinubu-Ojo",
+            // CASE: High-End Minimalist (Testing "Cleaning" white/silver theme)
+            username: "pure_aura",
+            artisan_name: "Amina Yusuf",
             trade: "cleaning",
-            location: "Ikeja GRA",
-            tagline: "Spotless finishes for corporate offices",
-            contact: "+234 808 000 1111",
-            verified_by: ["Standard Organization"],
-            headshot_url: "https://xsgames.co/randomusers/assets/avatars/female/44.jpg" 
-        }
+            location: "Eko Atlantic City",
+            contact: "Direct Line: 0900",
+            headshot_url: "https://xsgames.co/randomusers/assets/avatars/female/25.jpg"
+        }*/
     ];
+    
 
     console.log(`🚀 Starting batch generation for ${mockArtisans.length} randomized artisans...`);
 
@@ -64,7 +61,7 @@ const runTest = async () => {
             console.log(`-----------------------------------`);
             console.log(`🎴 Generating: ${artisan.artisan_name.toUpperCase()} (${artisan.trade})`);
             
-            const buffer = await createIdentityCard(artisan as any);
+            const buffer = await identityCardService.createIdentityCard(artisan as any);
             
             // Generate unique filename based on username and trade
             const filename = `card_${artisan.trade}_${artisan.username}.png`;

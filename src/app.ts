@@ -24,6 +24,7 @@ import { app as Storage } from './routes/Storage';
 import { app as Account } from './routes/Account';
 import { app as Reputation } from './routes/Reputation';
 import { app as Credit } from './routes/Credit';
+import {app as BusinessCard} from './routes/BusinessCard';
 
 const v1 = '/api/v1'
 const publicV1 = '/api/v1/public';
@@ -91,6 +92,7 @@ app.use(v1, Storage);  // R2 storage and documents
 app.use(v1, Account); // Virtual account info, transactions, withdrawals
 app.use(v1, Reputation); // Worker reputation scores and reviews
 app.use(v1, Credit); // Worker credit profile
+app.use(v1, BusinessCard);//Create business card
 app.use(ErrorHandler);
 
 export default app;
