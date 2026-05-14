@@ -148,3 +148,26 @@ app.get('/customer/my-jobs', [
 ], async (req: express.Request, res: express.Response, next: express.NextFunction) => {
     return customerController.getMyJobs(req, res, next);
 });
+
+/**
+ * @openapi
+ * /jobs/stats/customer:
+ *   get:
+ *     description: Get job statistics for the authenticated customer
+ *     tags: [Customer]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Customer job statistics
+ */
+app.get('/jobs/stats/customer', [
+    passport.authenticate('jwt', { session: false }),
+], async (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    try {
+        const stats = await jobService.getCustomerStats(req.user.id);
+        return res.json(stats);
+    } catch (error) {
+        return next(error);
+    }
+});

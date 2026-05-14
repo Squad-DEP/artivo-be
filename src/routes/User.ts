@@ -4,6 +4,11 @@ import middleware from './middleware';
 import User from './../models/User';
 import bcrypt from 'bcryptjs';
 import express from 'express';
+import { JobService } from '../services/marketplace/JobService';
+import { JobRequestService } from '../services/marketplace/JobRequestService';
+
+const jobRequestService = new JobRequestService();
+const jobService = new JobService(jobRequestService);
 
 export const app = express.Router();
 
@@ -200,7 +205,7 @@ app.get('/user/virtual-account', [
     try {
         const { VirtualAccountService } = await import('../services/squad/VirtualAccountService');
         const virtualAccountService = new VirtualAccountService();
-        
+
         const virtualAccount = await virtualAccountService.getVirtualAccountByUserId(req.user.id);
 
         if (!virtualAccount) {
@@ -208,6 +213,29 @@ app.get('/user/virtual-account', [
         }
 
         return res.json({ virtual_account: virtualAccount });
+    } catch (error) {
+        return next(error);
+    }
+});
+
+/**
+ * @openapi
+ * /jobs:
+ *   get:
+ *     description: Get all jobs for the authenticated user (as worker or customer)
+ *     tags: [User]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: List of jobs
+ */
+app.get('/jobs', [
+    passport.authenticate('jwt', { session: false }),
+], async (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    try {
+        const jobs = await jobService.getJobsForUser(req.user.id);
+        return res.json({ jobs });
     } catch (error) {
         return next(error);
     }

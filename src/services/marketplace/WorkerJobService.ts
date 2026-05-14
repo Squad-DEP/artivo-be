@@ -1,6 +1,18 @@
 import { JobSubscription, JobSubscriptionModel } from '../../models/JobSubscription';
+import { Job } from '../../models/Job';
+import { ReputationScore } from '../../models/ReputationScore';
 import { sequelize } from '../../providers/db';
 import { QueryTypes } from 'sequelize';
+
+export interface WorkerJobStatsShape {
+    total_jobs: number;
+    active_jobs: number;
+    completed_jobs: number;
+    total_earned: number;
+    pending_earnings: number;
+    completion_rate: number;
+    average_rating: number;
+}
 
 export interface JobRequestForWorker {
     id: string;
@@ -78,6 +90,26 @@ export class WorkerJobService {
             bind: [workerId],
             type: QueryTypes.SELECT,
         });
+    }
+
+    async getWorkerStats(workerId: string): Promise<WorkerJobStatsShape> {
+        const jobs = await Job.findAll({ where: { workerId } });
+        const active = jobs.filter(j => j.status === 'in_progress').length;
+        const completed = jobs.filter(j => j.status === 'completed' || j.status === 'paid').length;
+        const totalEarned = jobs.filter(j => j.status === 'paid').reduce((sum, j) => sum + Number(j.amount), 0);
+        const pendingEarnings = jobs.filter(j => j.status === 'in_progress').reduce((sum, j) => sum + Number(j.amount), 0);
+
+        const rep = await ReputationScore.findOne({ where: { userId: workerId } });
+
+        return {
+            total_jobs: jobs.length,
+            active_jobs: active,
+            completed_jobs: completed,
+            total_earned: totalEarned,
+            pending_earnings: pendingEarnings,
+            completion_rate: Number(rep?.completionRate ?? 0),
+            average_rating: Number(rep?.averageRating ?? 0),
+        };
     }
 
     async getAllOpenJobs(): Promise<JobRequestForWorker[]> {

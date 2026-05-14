@@ -1,7 +1,16 @@
 import { Job, JobModel, JobStatus } from '../../models/Job';
+import { JobRequest } from '../../models/JobRequest';
 import { JobRequestService } from './JobRequestService';
 import { sequelize } from '../../providers/db';
 import { JOB_STATUS, JOB_REQUEST_STATUS, USER_ROLE } from '../../constants/statuses';
+
+export interface CustomerJobStatsShape {
+    total_jobs: number;
+    active_jobs: number;
+    completed_jobs: number;
+    total_spent: number;
+    pending_payments: number;
+}
 
 export interface CreateJobDTO {
     jobRequestId: string;
@@ -91,6 +100,68 @@ export class JobService {
             await transaction.rollback();
             throw error;
         }
+    }
+
+    async getCustomerStats(customerId: string): Promise<CustomerJobStatsShape> {
+        const jobs = await Job.findAll({ where: { customerId } });
+        const active = jobs.filter(j => j.status === 'in_progress').length;
+        const completed = jobs.filter(j => j.status === 'completed' || j.status === 'paid').length;
+        const totalSpent = jobs.filter(j => j.status === 'paid').reduce((sum, j) => sum + Number(j.amount), 0);
+        const pendingPayments = jobs.filter(j => j.status === 'in_progress').reduce((sum, j) => sum + Number(j.amount), 0);
+
+        return {
+            total_jobs: jobs.length,
+            active_jobs: active,
+            completed_jobs: completed,
+            total_spent: totalSpent,
+            pending_payments: pendingPayments,
+        };
+    }
+
+    async getJobsForUser(userId: string): Promise<any[]> {
+        const [workerJobs, customerJobs, jobRequests] = await Promise.all([
+            Job.findAll({ where: { workerId: userId }, order: [['created_at', 'DESC']], limit: 50 }),
+            Job.findAll({ where: { customerId: userId }, order: [['created_at', 'DESC']], limit: 50 }),
+            JobRequest.findAll({ where: { customerId: userId }, order: [['created_at', 'DESC']], limit: 50 }),
+        ]);
+
+        const allJobIds = new Set<string>();
+        const allJobs: any[] = [];
+
+        [...workerJobs, ...customerJobs].forEach(j => {
+            if (!allJobIds.has(j.id)) {
+                allJobIds.add(j.id);
+                allJobs.push({
+                    id: j.id,
+                    title: `Job #${j.id.slice(0, 8)}`,
+                    description: '',
+                    status: j.status,
+                    budget_min: Number(j.amount),
+                    budget_max: Number(j.amount),
+                    final_amount: Number(j.amount),
+                    worker_id: j.workerId,
+                    customer_id: j.customerId,
+                    created_at: j.createdAt,
+                    stages: [],
+                });
+            }
+        });
+
+        jobRequests.forEach(jr => {
+            allJobs.push({
+                id: jr.id,
+                title: jr.title,
+                description: jr.description || '',
+                status: jr.status,
+                budget_min: Number(jr.budget ?? 0),
+                budget_max: Number(jr.budget ?? 0),
+                customer_id: jr.customerId,
+                created_at: jr.createdAt,
+                stages: [],
+            });
+        });
+
+        return allJobs;
     }
 
     async verifyJobOwnership(id: string, userId: string, role: 'customer' | 'worker'): Promise<boolean> {

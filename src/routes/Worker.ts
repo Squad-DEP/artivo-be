@@ -270,3 +270,26 @@ app.get('/worker/jobs/stream', [
 ], async (req: express.Request, res: express.Response, next: express.NextFunction) => {
     return workerController.streamJobs(req, res, next);
 });
+
+/**
+ * @openapi
+ * /jobs/stats/worker:
+ *   get:
+ *     description: Get job statistics for the authenticated worker
+ *     tags: [Worker]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Worker job statistics
+ */
+app.get('/jobs/stats/worker', [
+    passport.authenticate('jwt', { session: false }),
+], async (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    try {
+        const stats = await workerJobService.getWorkerStats(req.user.id);
+        return res.json(stats);
+    } catch (error) {
+        return next(error);
+    }
+});

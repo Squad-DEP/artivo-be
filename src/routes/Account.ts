@@ -1,16 +1,15 @@
 import { body, validationResult } from 'express-validator';
 import passport from './../providers/Passport';
 import express from 'express';
-import crypto from 'crypto';
 import { VirtualAccountService } from '../services/squad/VirtualAccountService';
 import { SquadService } from '../services/squad/SquadService';
-import { WithdrawalLog } from '../models/WithdrawalLog';
-import { WITHDRAWAL_STATUS } from '../constants/statuses';
+import { WithdrawalService } from '../services/marketplace/WithdrawalService';
 
 export const app = express.Router();
 
 const virtualAccountService = new VirtualAccountService();
 const squadService = new SquadService();
+const withdrawalService = new WithdrawalService(squadService);
 
 /**
  * @openapi
@@ -38,6 +37,49 @@ app.get('/account/virtual-account', [
             return res.status(404).json({
                 msg: 'Virtual account not found. Please verify your email or contact support.',
             });
+        }
+
+        return res.json({
+            virtual_account: {
+                account_number: account.virtualAccountNumber,
+                account_name: account.virtualAccountName,
+                bank_name: account.bankName,
+                bank_code: account.bankCode,
+                customer_identifier: account.customerIdentifier,
+                balance: Number(account.balance ?? 0),
+                total_deposited: Number(account.totalDeposited ?? 0),
+            },
+        });
+    } catch (error) {
+        return next(error);
+    }
+});
+
+/**
+ * @openapi
+ * /account/ensure-setup:
+ *   post:
+ *     description: >
+ *       Auto-verify email and create a virtual account for demo/testing purposes.
+ *       If email is not verified, it will be verified automatically.
+ *       If no virtual account exists, one will be created.
+ *     tags: [Account]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Virtual account details
+ *       503:
+ *         description: Could not create virtual account
+ */
+app.post('/account/ensure-setup', [
+    passport.authenticate('jwt', { session: false }),
+], async (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    try {
+        const account = await virtualAccountService.ensureSetupForUser(req.user.id);
+
+        if (!account) {
+            return res.status(503).json({ msg: 'Could not create virtual account. Squad may not be configured.' });
         }
 
         return res.json({
@@ -204,75 +246,40 @@ app.post('/account/withdraw', [
             return res.status(404).json({ msg: 'Virtual account not found. Cannot process withdrawal.' });
         }
 
-        // Reference format required by Squad: MERCHANTID_REFERENCE
-        const uniquePart = crypto.randomBytes(6).toString('hex').toUpperCase();
-        const transactionReference = `ARTIVO_${req.user.id.replace(/-/g, '').slice(0, 8).toUpperCase()}_${uniquePart}`;
-
-        // Create pending log before calling Squad (so we have a record even if it times out)
-        const withdrawalLog = await WithdrawalLog.create({
-            userId: req.user.id,
-            squadTransactionReference: transactionReference,
-            amount,
-            bankCode: bank_code,
-            accountNumber: account_number,
-            accountName: account_name,
-            status: WITHDRAWAL_STATUS.PENDING,
-            remarks: remark ?? null,
-        });
-
-        let transferResponse;
+        let result;
         try {
-            transferResponse = await squadService.initiateTransfer({
-                transaction_reference: transactionReference,
-                amount: String(Math.round(amount * 100)), // NGN → kobo as string
-                bank_code,
-                account_number,
-                account_name,
-                currency_id: 'NGN',
-                remark: remark || `Artivo withdrawal`,
-            });
-        } catch (squadErr: any) {
-            // 424 timeout — caller should requery; leave status as 'pending'
-            if (squadErr?.statusCode === 424) {
-                return res.status(202).json({
-                    msg: 'Transfer is pending. Please check status via /account/withdraw/requery.',
-                    withdrawal_id: withdrawalLog.id,
-                    transaction_reference: transactionReference,
-                });
-            }
-            await WithdrawalLog.update(
-                { status: WITHDRAWAL_STATUS.FAILED, remarks: squadErr?.message ?? 'Squad error' },
-                { where: { id: withdrawalLog.id } }
-            );
-            return res.status(400).json({
-                msg: 'Withdrawal failed.',
-                details: squadErr?.message,
-            });
-        }
-
-        if (!transferResponse.success) {
-            await WithdrawalLog.update(
-                { status: WITHDRAWAL_STATUS.FAILED, remarks: (transferResponse as any).message ?? 'Squad transfer failed' },
-                { where: { id: withdrawalLog.id } }
-            );
-            return res.status(400).json({
-                msg: 'Withdrawal failed. Please try again or contact support.',
-                details: (transferResponse as any).message,
-            });
-        }
-
-        await WithdrawalLog.update({ status: WITHDRAWAL_STATUS.SUCCESS }, { where: { id: withdrawalLog.id } });
-
-        return res.json({
-            msg: 'Withdrawal initiated successfully',
-            withdrawal: {
-                id: withdrawalLog.id,
-                transaction_reference: transactionReference,
+            result = await withdrawalService.initiateWithdrawal(req.user.id, {
                 amount,
                 bank_code,
                 account_number,
                 account_name,
-                status: WITHDRAWAL_STATUS.SUCCESS,
+                remark,
+            });
+        } catch (serviceErr: any) {
+            if (serviceErr.squadError) {
+                return res.status(400).json({ msg: 'Withdrawal failed.', details: serviceErr.details });
+            }
+            throw serviceErr;
+        }
+
+        if (result.status === 'pending') {
+            return res.status(202).json({
+                msg: 'Transfer is pending. Please check status via /account/withdraw/requery.',
+                withdrawal_id: result.withdrawal_id,
+                transaction_reference: result.transaction_reference,
+            });
+        }
+
+        return res.json({
+            msg: 'Withdrawal initiated successfully',
+            withdrawal: {
+                id: result.withdrawal_id,
+                transaction_reference: result.transaction_reference,
+                amount: result.amount,
+                bank_code: result.bank_code,
+                account_number: result.account_number,
+                account_name: result.account_name,
+                status: result.withdrawal_status,
             },
         });
     } catch (error) {
@@ -315,23 +322,17 @@ app.post('/account/withdraw/requery', [
     try {
         const { transaction_reference } = req.body;
 
-        // Confirm this withdrawal belongs to the authenticated user
-        const log = await WithdrawalLog.findOne({
-            where: { squadTransactionReference: transaction_reference, userId: req.user.id },
-        });
-        if (!log) {
-            return res.status(404).json({ msg: 'Withdrawal not found.' });
+        let result;
+        try {
+            result = await withdrawalService.requeryWithdrawal(req.user.id, transaction_reference);
+        } catch (serviceErr: any) {
+            if (serviceErr.notFound) {
+                return res.status(404).json({ msg: 'Withdrawal not found.' });
+            }
+            throw serviceErr;
         }
 
-        const result = await squadService.requeryTransfer({ transaction_reference });
-
-        if (result.success && result.data) {
-            const newStatus = result.data.response_code === '00' ? WITHDRAWAL_STATUS.SUCCESS : WITHDRAWAL_STATUS.FAILED;
-            await WithdrawalLog.update({ status: newStatus }, { where: { id: log.id } });
-            return res.json({ status: newStatus, details: result.data });
-        }
-
-        return res.json({ status: log.status, msg: 'Could not get updated status from Squad.' });
+        return res.json(result);
     } catch (error) {
         return next(error);
     }
@@ -353,10 +354,7 @@ app.get('/account/withdrawals', [
     passport.authenticate('jwt', { session: false }),
 ], async (req: express.Request, res: express.Response, next: express.NextFunction) => {
     try {
-        const withdrawals = await WithdrawalLog.findAll({
-            where: { userId: req.user.id },
-            order: [['created_at', 'DESC']],
-        });
+        const withdrawals = await withdrawalService.getWithdrawalHistory(req.user.id);
         return res.json({ withdrawals });
     } catch (error) {
         return next(error);

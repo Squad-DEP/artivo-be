@@ -4,7 +4,7 @@ import ErrorHandler from './providers/ErrorHandler';
 import { rateLimit } from 'express-rate-limit';
 import fileUpload from 'express-fileupload';
 import express from 'express';
-import morgan from 'morgan';
+import { requestLogger, errorLogger } from './providers/Logger';
 import helmet from 'helmet';
 import cors from 'cors';
 import './models/Relationships';
@@ -22,6 +22,8 @@ import { app as Public } from './routes/Public';
 import { app as Squad } from './routes/Squad';
 import { app as Storage } from './routes/Storage';
 import { app as Account } from './routes/Account';
+import { app as Reputation } from './routes/Reputation';
+import { app as Credit } from './routes/Credit';
 
 const v1 = '/api/v1'
 const publicV1 = '/api/v1/public';
@@ -39,7 +41,7 @@ if (!isTest) console.log('*');
 // Express
 const app = express();
 app.disable('x-powered-by');
-if (!isTest) app.use(morgan('dev'));
+if (!isTest) app.use(requestLogger);
 app.use(helmet());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -87,6 +89,8 @@ app.use(publicV1, Public);  // Public endpoints (no auth required)
 app.use(v1, Squad);  // Squad webhooks and payment verification
 app.use(v1, Storage);  // R2 storage and documents
 app.use(v1, Account); // Virtual account info, transactions, withdrawals
+app.use(v1, Reputation); // Worker reputation scores and reviews
+app.use(v1, Credit); // Worker credit profile
 app.use(ErrorHandler);
 
 export default app;

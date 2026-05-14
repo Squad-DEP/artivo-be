@@ -1,6 +1,6 @@
 import { SquadService } from './SquadService';
 import { VirtualAccount, VirtualAccountModel } from '../../models/VirtualAccount';
-import { UserModel } from '../../models/User';
+import { User, UserModel } from '../../models/User';
 import { SquadError, SquadDuplicateCustomerError } from './SquadErrors';
 
 export class VirtualAccountService {
@@ -59,6 +59,28 @@ export class VirtualAccountService {
         } catch (error) {
             return this.handleVirtualAccountCreationError(error, user.id);
         }
+    }
+
+    /**
+     * Ensure a user's email is verified and virtual account exists.
+     * Creates the virtual account if it doesn't exist yet.
+     */
+    async ensureSetupForUser(userId: string): Promise<VirtualAccountModel | null> {
+        const user = await User.unscoped().findOne({ where: { id: userId } });
+        if (!user) {
+            throw new Error('User not found');
+        }
+
+        if (!user.emailVerified) {
+            await user.update({ emailVerified: true, emailVerificationKey: null });
+        }
+
+        const account = await this.getVirtualAccountByUserId(userId);
+        if (account) {
+            return account;
+        }
+
+        return this.createVirtualAccountForUser(user);
     }
 
     /**
