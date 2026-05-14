@@ -26,7 +26,7 @@ export interface WorkerFeedFilters {
 
 export class WorkerService {
     async getWorkerFeed(filters: WorkerFeedFilters): Promise<WorkerFeedItem[]> {
-        const { location, query, limit = 20 } = filters;
+        const { location, query: searchQuery, limit = 20 } = filters;
 
         let whereClause = "WHERE u.role = 'worker'";
         const params: any[] = [];
@@ -38,13 +38,13 @@ export class WorkerService {
             paramIndex++;
         }
 
-        if (query) {
+        if (searchQuery) {
             whereClause += ` AND (u.full_name ILIKE $${paramIndex} OR wp.display_name ILIKE $${paramIndex} OR wp.bio ILIKE $${paramIndex} OR EXISTS (SELECT 1 FROM unnest(wp.skills) s WHERE s ILIKE $${paramIndex}))`;
-            params.push(`%${query}%`);
+            params.push(`%${searchQuery}%`);
             paramIndex++;
         }
 
-        const query = `
+        const sql = `
             SELECT 
                 u.id,
                 u.full_name,
@@ -68,7 +68,7 @@ export class WorkerService {
         `;
         params.push(limit);
 
-        const workers = await sequelize.query<WorkerFeedItem>(query, {
+        const workers = await sequelize.query<WorkerFeedItem>(sql, {
             bind: params,
             type: QueryTypes.SELECT,
         });

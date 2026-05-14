@@ -74,6 +74,9 @@ app.get('/account/virtual-account', [
  */
 app.post('/account/ensure-setup', [
     passport.authenticate('jwt', { session: false }),
+    body('first_name').notEmpty().trim().withMessage('First name is required'),
+    body('last_name').notEmpty().trim().withMessage('Last name is required'),
+    body('phone').notEmpty().trim().withMessage('Phone number is required'),
     body('bvn').notEmpty().isLength({ min: 11, max: 11 }).withMessage('BVN must be 11 digits'),
     body('dob').notEmpty().isDate({ format: 'YYYY-MM-DD' }).withMessage('DOB must be YYYY-MM-DD'),
     body('gender').isIn(['1', '2']).withMessage('Gender must be 1 (Male) or 2 (Female)'),
@@ -85,11 +88,12 @@ app.post('/account/ensure-setup', [
             return res.status(422).json({ errors: errors.mapped() });
         }
 
-        const { bvn, dob, gender, address } = matchedData(req) as {
+        const { first_name, last_name, phone, bvn, dob, gender, address } = matchedData(req) as {
+            first_name: string; last_name: string; phone: string;
             bvn: string; dob: string; gender: '1' | '2'; address: string;
         };
 
-        const account = await virtualAccountService.ensureSetupForUser(req.user.id, { bvn, dob, gender, address });
+        const account = await virtualAccountService.ensureSetupForUser(req.user.id, { first_name, last_name, phone, bvn, dob, gender, address });
 
         if (!account) {
             return res.status(503).json({ msg: 'Could not create virtual account. Squad may not be configured.' });

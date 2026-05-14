@@ -16,7 +16,7 @@ export class VirtualAccountService {
      */
     async createVirtualAccountForUser(
         user: UserModel,
-        kyc?: { bvn: string; dob: string; gender: '1' | '2'; address: string }
+        kyc?: { bvn: string; dob: string; gender: '1' | '2'; address: string; first_name?: string; last_name?: string; phone?: string }
     ): Promise<VirtualAccountModel | null> {
         try {
             // Check if Squad is configured
@@ -34,8 +34,10 @@ export class VirtualAccountService {
 
             this.validateUserData(user);
 
-            // Parse full name
-            const { firstName, lastName } = this.parseFullName(user.fullName);
+            // Use KYC-provided name if given, otherwise fall back to user profile
+            const { firstName: defaultFirst, lastName: defaultLast } = this.parseFullName(user.fullName);
+            const firstName = kyc?.first_name || defaultFirst;
+            const lastName = kyc?.last_name || defaultLast;
 
             // dob from KYC is YYYY-MM-DD; Squad expects MM/DD/YYYY
             const rawDob = kyc?.dob || user.dob || '1990-01-01';
@@ -46,12 +48,13 @@ export class VirtualAccountService {
                 customer_identifier: user.id,
                 first_name: firstName,
                 last_name: lastName,
-                mobile_num: user.phone || this.getDefaultPhoneNumber(),
+                mobile_num: this.normalizePhone(kyc?.phone || user.phone),
                 email: user.email,
                 dob,
                 bvn: kyc?.bvn || '00000000000',
                 gender: kyc?.gender || '1',
                 address: kyc?.address || '1 Artivo Street',
+                beneficiary_account: process.env.SQUAD_BENEFICIARY_ACCOUNT,
             });
 
             // Validate Squad response
@@ -78,7 +81,7 @@ export class VirtualAccountService {
      */
     async ensureSetupForUser(
         userId: string,
-        kyc: { bvn: string; dob: string; gender: '1' | '2'; address: string }
+        kyc: { bvn: string; dob: string; gender: '1' | '2'; address: string; first_name?: string; last_name?: string; phone?: string }
     ): Promise<VirtualAccountModel | null> {
         const user = await User.unscoped().findOne({ where: { id: userId } });
         if (!user) throw new Error('User not found');
@@ -202,9 +205,18 @@ export class VirtualAccountService {
     /**
      * Get default phone number when user doesn't have one
      */
-    private getDefaultPhoneNumber(): string {
-        // Use a placeholder that won't trigger BVN validation
-        return '0000000000';
+    private normalizePhone(phone?: string | null): string {
+        if (!phone) return '00000000000';
+        // Strip all non-digits
+        const digits = phone.replace(/\D/g, '');
+        // Convert +234XXXXXXXXXX → 0XXXXXXXXXX (11 digits)
+        if (digits.startsWith('234') && digits.length === 13) {
+            return '0' + digits.slice(3);
+        }
+        // Already 11 or 13 digits — use as-is
+        if (digits.length === 11 || digits.length === 13) return digits;
+        // Fallback placeholder
+        return '00000000000';
     }
 
     /**
