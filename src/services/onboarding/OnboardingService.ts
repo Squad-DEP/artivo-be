@@ -1,5 +1,7 @@
 import User from '../../models/User';
 import { WorkerProfile } from '../../models/WorkerProfile';
+import { sequelize } from '../../providers/db';
+import { QueryTypes } from 'sequelize';
 
 export interface SaveProfileDTO {
     fullName?: string;
@@ -13,6 +15,17 @@ export interface SaveProfileDTO {
 }
 
 export class OnboardingService {
+    /**
+     * Get all available job types from the database
+     */
+    async getJobTypes(): Promise<Array<{id: string, name: string}>> {
+        const jobTypes = await sequelize.query<{id: string, name: string}>(
+            'SELECT id, name FROM job_types ORDER BY name',
+            { type: QueryTypes.SELECT }
+        );
+        return jobTypes;
+    }
+
     /**
      * Persist AI-extracted onboarding data for a user.
      * Always marks the user as onboarded on success.

@@ -5,7 +5,6 @@
 
 import { IAIProvider, AIResult } from './IAIProvider';
 import { GeminiProvider } from './GeminiProvider';
-import { OpenAIProvider } from './OpenAIProvider';
 import { GroqProvider } from './GroqProvider';
 
 class AIService {
@@ -117,6 +116,40 @@ class AIService {
             Do not return any conversational text or markdown blocks, only return raw stringified JSON.`;
         }
         return this.executeWithFallback(prompt, userInput, context);
+    }
+
+    /**
+     * Extract job description from voice/text input
+     */
+    async extractJobDescription(userInput: string, availableJobTypes: Array<{id: string, name: string}>): Promise<AIResult> {
+        const jobTypesList = availableJobTypes.map(jt => `- ${jt.name} (id: ${jt.id})`).join('\n');
+        
+        const prompt = `You are an AI assistant for Artivo platform in Nigeria that extracts job posting details from customer input.
+The user's input may be in English, Nigerian Pidgin English, Yoruba, Igbo, or Hausa, or a mix of these.
+
+Available job types:
+${jobTypesList}
+
+CRITICAL INSTRUCTIONS:
+1. Listen/Read the input carefully regardless of the Nigerian dialect or language used.
+2. Extract job details and translate descriptive values into standard English.
+3. Match the job to one of the available job types above based on the description.
+4. Extract budget/price information if mentioned.
+
+Analyze the input and return a valid JSON object matching this schema exactly:
+{
+    "job_type_id": "string or null (UUID from the list above that best matches)",
+    "title": "string or null (concise job title in English)",
+    "description": "string or null (detailed description in English)",
+    "location": "string or null (e.g., 'Yaba, Lagos')",
+    "budget": number or null (numeric value only, no currency symbols),
+    "confidence": "string ('high' | 'medium' | 'low')",
+    "language_detected": "string (e.g., 'English', 'Pidgin', 'Yoruba', 'Igbo', 'Hausa')"
+}
+
+Do not return any conversational text or markdown blocks, only return raw stringified JSON.`;
+
+        return this.executeWithFallback(prompt, userInput);
     }
 
     /**
