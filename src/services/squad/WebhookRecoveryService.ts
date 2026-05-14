@@ -18,6 +18,7 @@ import { SquadWebhookPayload } from './types';
  */
 export class WebhookRecoveryService {
     private squadService: SquadService;
+
     private paymentService: PaymentService;
 
     constructor() {

@@ -64,14 +64,14 @@ export class ReviewService {
     }
 
     async getReviewsByReviewee(revieweeId: string): Promise<ReviewModel[]> {
-        return await Review.findAll({
+        return Review.findAll({
             where: { revieweeId },
             order: [['createdAt', 'DESC']],
         });
     }
 
     async getReviewByJob(jobId: string): Promise<ReviewModel | null> {
-        return await Review.findOne({
+        return Review.findOne({
             where: { jobId },
         });
     }

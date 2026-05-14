@@ -25,11 +25,11 @@ export class JobRequestService {
     }
 
     async getJobRequestById(id: string): Promise<JobRequestModel | null> {
-        return await JobRequest.findByPk(id);
+        return JobRequest.findByPk(id);
     }
 
     async getJobRequestsByCustomer(customerId: string): Promise<JobRequestModel[]> {
-        return await JobRequest.findAll({
+        return JobRequest.findAll({
             where: { customerId },
             order: [['createdAt', 'DESC']],
         });
@@ -38,7 +38,7 @@ export class JobRequestService {
     async updateJobRequestStatus(id: string, status: 'open' | 'assigned' | 'completed' | 'cancelled'): Promise<void> {
         await JobRequest.update(
             { status },
-            { where: { id } }
+            { where: { id } },
         );
     }
 

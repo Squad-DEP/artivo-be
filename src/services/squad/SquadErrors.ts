@@ -2,9 +2,13 @@ import { SquadErrorCode } from './types';
 
 export class SquadError extends Error {
     public readonly code: SquadErrorCode;
+
     public readonly statusCode: number;
+
     public readonly isRetryable: boolean;
+
     public readonly squadMessage?: string;
+
     public readonly squadData?: Record<string, any>;
 
     constructor(
@@ -13,7 +17,7 @@ export class SquadError extends Error {
         statusCode: number,
         isRetryable: boolean = false,
         squadMessage?: string,
-        squadData?: Record<string, any>
+        squadData?: Record<string, any>,
     ) {
         super(message);
         this.name = 'SquadError';

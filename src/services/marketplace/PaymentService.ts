@@ -32,14 +32,14 @@ export class PaymentService {
     }
 
     async getPaymentLogsByJob(jobId: string): Promise<PaymentLogModel[]> {
-        return await PaymentLog.findAll({
+        return PaymentLog.findAll({
             where: { jobId },
             order: [['createdAt', 'DESC']],
         });
     }
 
     async getPaymentLogByTransactionId(squadTransactionId: string): Promise<PaymentLogModel | null> {
-        return await PaymentLog.findOne({
+        return PaymentLog.findOne({
             where: { squadTransactionId },
         });
     }

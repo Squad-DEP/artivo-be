@@ -9,6 +9,7 @@ import { WorkerProfile, JobRequest, MatchResult } from './types';
 
 class MatchingService {
     private traditionalScorer: TraditionalScorer;
+
     private aiScorer: AIScorer;
 
     constructor() {
@@ -22,7 +23,7 @@ class MatchingService {
     async rankWorkersForJob(
         job: JobRequest,
         workers: WorkerProfile[],
-        useAI: boolean = true
+        useAI: boolean = true,
     ): Promise<MatchResult[]> {
         const results: MatchResult[] = [];
 
@@ -50,8 +51,8 @@ class MatchingService {
                 explanation,
                 score_breakdown: {
                     ...traditional.breakdown,
-                    ai_semantic: aiScore
-                }
+                    ai_semantic: aiScore,
+                },
             });
         }
 
@@ -65,7 +66,7 @@ class MatchingService {
     async getTopMatches(
         job: JobRequest,
         workers: WorkerProfile[],
-        limit: number = 5
+        limit: number = 5,
     ): Promise<MatchResult[]> {
         const ranked = await this.rankWorkersForJob(job, workers, true);
         return ranked.slice(0, limit);

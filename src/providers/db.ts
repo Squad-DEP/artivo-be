@@ -19,8 +19,8 @@ const sequelize = new Sequelize({
     dialectOptions: dialect === 'postgres' ? {
         ssl: {
             require: true,
-            rejectUnauthorized: false // Supabase uses SSL
-        }
+            rejectUnauthorized: false, // Supabase uses SSL
+        },
     } : undefined,
     pool: {
         max: 5,

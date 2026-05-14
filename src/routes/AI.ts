@@ -70,21 +70,21 @@ app.post('/ai/onboard/voice', [
         const { audioData, userType } = matchedData(req);
 
         //sanitize: strip potential front end uri prefixes 
-        const cleanBase64Audio = audioData.replace(/^data:audio\/\w+;base64,/, "").trim();
+        const cleanBase64Audio = audioData.replace(/^data:audio\/\w+;base64,/, '').trim();
 
         //direct stream: Pass clean base64 directly into the unified multimodal provider matrix
         const aiResult = await AIService.processOnboarding(cleanBase64Audio, userType);
 
-        if(!aiResult.success) {
+        if (!aiResult.success) {
             return res.status(500).json({
-                message: "Failed to process audio onboarding with AI",
-                error: aiResult.error
+                message: 'Failed to process audio onboarding with AI',
+                error: aiResult.error,
             });
         }
 
         return res.status(200).json({
             message: true,
-            data: aiResult.data
+            data: aiResult.data,
         });
         
         
@@ -164,7 +164,7 @@ app.post('/ai/onboard/text', [
         if (!result.success) {
             return res.status(500).json({ 
                 msg: 'Failed to process text input',
-                error: result.error 
+                error: result.error, 
             });
         }
 
@@ -236,7 +236,7 @@ app.post('/ai/chat', [
         if (!result.success) {
             return res.status(500).json({ 
                 msg: 'Failed to process message',
-                error: result.error 
+                error: result.error, 
             });
         }
 

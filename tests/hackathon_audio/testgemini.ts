@@ -9,7 +9,7 @@ async function liveVerify() {
 
     // 1. Path to your test audio file (ensure this file exists!)
     // Supports: .wav, .mp3, .aiff, .aac, .ogg, .flac
-    const audioFilePath = path.join("/Users/apple/Desktop/hackathon/artivo-be", "tests/hackathon_audio/testaudio4.m4a");
+    const audioFilePath = path.join("/Users/apple/Desktop/hackathon/artivo-be", "tests/hackathon_audio/testaudio.m4a");
 
     if (!fs.existsSync(audioFilePath)) {
         console.error(`🚨 File not found: ${audioFilePath}`);

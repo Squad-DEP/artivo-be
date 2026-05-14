@@ -27,7 +27,7 @@ export class WorkerJobService {
             return existing;
         }
 
-        return await JobSubscription.create({
+        return JobSubscription.create({
             workerId,
             jobTypeId,
         });
@@ -42,7 +42,7 @@ export class WorkerJobService {
     }
 
     async getWorkerSubscriptions(workerId: string): Promise<JobSubscriptionModel[]> {
-        return await JobSubscription.findAll({
+        return JobSubscription.findAll({
             where: { workerId },
             order: [['createdAt', 'DESC']],
         });
@@ -74,7 +74,7 @@ export class WorkerJobService {
             ORDER BY jr.created_at DESC
         `;
 
-        return await sequelize.query<JobRequestForWorker>(query, {
+        return sequelize.query<JobRequestForWorker>(query, {
             bind: [workerId],
             type: QueryTypes.SELECT,
         });
@@ -101,7 +101,7 @@ export class WorkerJobService {
             ORDER BY jr.created_at DESC
         `;
 
-        return await sequelize.query<JobRequestForWorker>(query, {
+        return sequelize.query<JobRequestForWorker>(query, {
             type: QueryTypes.SELECT,
         });
     }

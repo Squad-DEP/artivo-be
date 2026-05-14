@@ -13,7 +13,7 @@ export class CustomerController {
         private jobService: JobService,
         private paymentService: PaymentService,
         private reviewService: ReviewService,
-        private matchingService: typeof MatchingService
+        private matchingService: typeof MatchingService,
     ) {}
 
     async getFeed(req: express.Request, res: express.Response, next: express.NextFunction) {
@@ -48,7 +48,7 @@ export class CustomerController {
                 const ranked = await this.matchingService.rankWorkersForJob(
                     jobRequest as any,
                     workerProfiles as any,
-                    true
+                    true,
                 );
 
                 // Merge ranking with full worker data
@@ -94,7 +94,7 @@ export class CustomerController {
             // Verify job request ownership
             const isOwner = await this.jobRequestService.verifyJobRequestOwnership(
                 job_request_id,
-                req.user.id
+                req.user.id,
             );
 
             if (!isOwner) {

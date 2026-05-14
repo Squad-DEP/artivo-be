@@ -7,7 +7,7 @@ export class WorkerController {
     constructor(
         private workerJobService: WorkerJobService,
         private jobService: JobService,
-        private reviewService: ReviewService
+        private reviewService: ReviewService,
     ) {}
 
     async subscribe(req: express.Request, res: express.Response, next: express.NextFunction) {
@@ -16,12 +16,12 @@ export class WorkerController {
 
             const subscription = await this.workerJobService.subscribeToJobType(
                 req.user.id,
-                job_type_id
+                job_type_id,
             );
 
             return res.json({ 
                 subscription,
-                msg: 'Successfully subscribed to job type notifications'
+                msg: 'Successfully subscribed to job type notifications',
             });
         } catch (error) {
             return next(error);
@@ -34,7 +34,7 @@ export class WorkerController {
 
             const success = await this.workerJobService.unsubscribeFromJobType(
                 req.user.id,
-                job_type_id
+                job_type_id,
             );
 
             if (!success) {
@@ -43,7 +43,7 @@ export class WorkerController {
 
             return res.json({ 
                 success: true,
-                msg: 'Successfully unsubscribed from job type'
+                msg: 'Successfully unsubscribed from job type',
             });
         } catch (error) {
             return next(error);
@@ -82,7 +82,7 @@ export class WorkerController {
 
             return res.json({ 
                 job,
-                msg: 'Job accepted successfully'
+                msg: 'Job accepted successfully',
             });
         } catch (error) {
             return next(error);
@@ -105,7 +105,7 @@ export class WorkerController {
 
             return res.json({ 
                 success: true,
-                msg: 'Job marked as in progress. Waiting for customer confirmation.'
+                msg: 'Job marked as in progress. Waiting for customer confirmation.',
             });
         } catch (error) {
             return next(error);

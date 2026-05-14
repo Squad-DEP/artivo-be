@@ -41,7 +41,7 @@ app.get('/matching/job-types', async (req: express.Request, res: express.Respons
     try {
         const jobTypes = await sequelize.query(
             'SELECT id, name, description FROM job_types ORDER BY name',
-            { type: QueryTypes.SELECT }
+            { type: QueryTypes.SELECT },
         );
         return res.json(jobTypes);
     } catch (error) {
@@ -115,7 +115,7 @@ app.get('/jobs/:jobId/matches', [
             description: 'Looking for experienced plumber to fix leaking pipes',
             location: 'Lagos',
             budget: 50000,
-            job_type: 'Plumbing'
+            job_type: 'Plumbing',
         };
 
         const mockWorkers = [
@@ -129,9 +129,9 @@ app.get('/jobs/:jobId/matches', [
                     credit_score: 85,
                     completion_rate: 95,
                     average_rating: 4.5,
-                    total_jobs: 20
-                }
-            }
+                    total_jobs: 20,
+                },
+            },
         ];
 
         const matches = await MatchingService.getTopMatches(mockJob, mockWorkers, limit);

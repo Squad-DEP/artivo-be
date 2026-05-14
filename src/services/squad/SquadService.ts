@@ -14,7 +14,9 @@ import {
 
 export class SquadService {
     private client: AxiosInstance;
+
     private readonly maxRetries: number;
+
     private readonly retryDelay: number;
 
     constructor() {
@@ -39,7 +41,7 @@ export class SquadService {
             (error) => {
                 this.logError('Request interceptor error', error);
                 return Promise.reject(error);
-            }
+            },
         );
 
         this.client.interceptors.response.use(
@@ -48,14 +50,14 @@ export class SquadService {
                     response.config.method?.toUpperCase() || 'UNKNOWN',
                     response.config.url || '',
                     response.status,
-                    response.data
+                    response.data,
                 );
                 return response;
             },
             (error) => {
                 this.logError('Response interceptor error', error);
                 return Promise.reject(error);
-            }
+            },
         );
     }
 
@@ -64,7 +66,7 @@ export class SquadService {
             async () => {
                 const response = await this.client.post<VirtualAccountResponse>(
                     '/virtual-account',
-                    data
+                    data,
                 );
 
                 if (response.status >= 200 && response.status < 300 && response.data.success) {
@@ -74,7 +76,7 @@ export class SquadService {
                 throw createSquadError(response.status, response.data, 'create virtual account');
             },
             'createVirtualAccount',
-            true
+            true,
         );
     }
 
@@ -84,14 +86,14 @@ export class SquadService {
                 'Customer identifier is required',
                 'VALIDATION_ERROR' as any,
                 400,
-                false
+                false,
             );
         }
 
         return this.executeWithRetry(
             async () => {
                 const response = await this.client.get<VirtualAccountDetailsResponse>(
-                    `/virtual-account/${customerIdentifier}`
+                    `/virtual-account/${customerIdentifier}`,
                 );
 
                 if (response.status >= 200 && response.status < 300 && response.data.success) {
@@ -101,7 +103,7 @@ export class SquadService {
                 throw createSquadError(response.status, response.data, 'get virtual account');
             },
             'getVirtualAccount',
-            true
+            true,
         );
     }
 
@@ -111,14 +113,14 @@ export class SquadService {
                 'Customer identifier is required',
                 'VALIDATION_ERROR' as any,
                 400,
-                false
+                false,
             );
         }
 
         return this.executeWithRetry(
             async () => {
                 const response = await this.client.get<TransactionQueryResponse>(
-                    `/virtual-account/customer/transactions/${customerIdentifier}`
+                    `/virtual-account/customer/transactions/${customerIdentifier}`,
                 );
 
                 if (response.status >= 200 && response.status < 300 && response.data.success) {
@@ -128,7 +130,7 @@ export class SquadService {
                 throw createSquadError(response.status, response.data, 'query customer transactions');
             },
             'getCustomerTransactions',
-            true
+            true,
         );
     }
 
@@ -136,7 +138,7 @@ export class SquadService {
         return this.executeWithRetry(
             async () => {
                 const response = await this.client.get<WebhookErrorLogResponse>(
-                    '/virtual-account/webhook/logs'
+                    '/virtual-account/webhook/logs',
                 );
 
                 if (response.status >= 200 && response.status < 300 && response.data.success) {
@@ -146,14 +148,14 @@ export class SquadService {
                 throw createSquadError(response.status, response.data, 'get webhook error logs');
             },
             'getWebhookErrorLogs',
-            true
+            true,
         );
     }
 
     private async executeWithRetry<T>(
         operation: () => Promise<T>,
         operationName: string,
-        isIdempotent: boolean
+        isIdempotent: boolean,
     ): Promise<T> {
         let lastError: Error | null = null;
         let attempt = 0;

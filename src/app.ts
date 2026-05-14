@@ -23,7 +23,7 @@ import { app as Worker } from './routes/Worker';
 import { app as Public } from './routes/Public';
 import { app as Squad } from './routes/Squad';
 
-const v1 = 'api/v1'
+const v1 = 'api/v1';
 const publicV1 = '/api/v1/public';
 const isTest = (process.env.NODE_ENV === 'test');
 

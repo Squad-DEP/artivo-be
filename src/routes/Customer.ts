@@ -26,7 +26,7 @@ const customerController = new CustomerController(
     jobService,
     paymentService,
     reviewService,
-    matchingService
+    matchingService,
 );
 
 /**

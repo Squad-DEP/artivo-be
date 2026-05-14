@@ -619,7 +619,7 @@ app.post('/auth/verify-email-manual', [
                 account_number: virtualAccount.virtualAccountNumber,
                 account_name: virtualAccount.virtualAccountName,
                 bank_name: virtualAccount.bankName,
-            } : null
+            } : null,
         });
     } catch (error) {
         return next(error);

@@ -9,7 +9,7 @@ export class AIScorer {
     async calculate(
         worker: WorkerProfile,
         job: JobRequest,
-        traditionalScore: number
+        traditionalScore: number,
     ): Promise<{ score: number; explanation: string }> {
         const prompt = buildMatchingPrompt(worker, job, traditionalScore);
 
@@ -23,7 +23,7 @@ export class AIScorer {
                     const parsed = JSON.parse(jsonMatch[0]);
                     return {
                         score: Math.min(Math.max(parsed.score || 0, 0), 100),
-                        explanation: parsed.explanation || 'AI analysis completed'
+                        explanation: parsed.explanation || 'AI analysis completed',
                     };
                 }
             }
@@ -31,13 +31,13 @@ export class AIScorer {
             // Fallback: use traditional score
             return {
                 score: traditionalScore,
-                explanation: 'Match based on skills, location, and reputation'
+                explanation: 'Match based on skills, location, and reputation',
             };
         } catch (error) {
             console.error('AI matching error:', error);
             return {
                 score: traditionalScore,
-                explanation: 'Match based on traditional algorithm'
+                explanation: 'Match based on traditional algorithm',
             };
         }
     }

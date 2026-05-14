@@ -36,7 +36,7 @@ function verifySquadWebhook(payload: any, signature: string): boolean {
         // Constant-time comparison to prevent timing attacks
         return crypto.timingSafeEqual(
             Buffer.from(hash, 'hex'),
-            Buffer.from(signature, 'hex')
+            Buffer.from(signature, 'hex'),
         );
     } catch (error) {
         console.error('[Squad Webhook] Signature verification failed:', error);

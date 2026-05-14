@@ -8,7 +8,7 @@ export class TraditionalScorer {
         const commonSkills = [
             'plumbing', 'electrical', 'carpentry', 'painting', 'welding',
             'masonry', 'roofing', 'hvac', 'landscaping', 'cleaning',
-            'cooking', 'driving', 'security', 'tailoring', 'hairdressing'
+            'cooking', 'driving', 'security', 'tailoring', 'hairdressing',
         ];
         
         const lowerText = text.toLowerCase();
@@ -21,7 +21,7 @@ export class TraditionalScorer {
     private calculateSkillsScore(worker: WorkerProfile, job: JobRequest): number {
         const jobSkills = this.extractSkills(job.description + ' ' + job.title);
         const matchingSkills = worker.skills.filter(skill =>
-            jobSkills.some(js => js.toLowerCase().includes(skill.toLowerCase()))
+            jobSkills.some(js => js.toLowerCase().includes(skill.toLowerCase())),
         );
         return (matchingSkills.length / Math.max(jobSkills.length, 1)) * 40;
     }
@@ -68,7 +68,7 @@ export class TraditionalScorer {
                 skills_match: skillsScore,
                 location_match: locationScore,
                 reputation: reputationScore,
-            }
+            },
         };
     }
 }

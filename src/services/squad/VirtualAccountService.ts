@@ -52,7 +52,7 @@ export class VirtualAccountService {
             const virtualAccount = await this.saveVirtualAccount(user.id, squadResponse.data);
 
             this.logSuccess(
-                `Virtual account created for user ${user.id}: ${squadResponse.data.virtual_account_number}`
+                `Virtual account created for user ${user.id}: ${squadResponse.data.virtual_account_number}`,
             );
 
             return virtualAccount;
@@ -180,9 +180,9 @@ export class VirtualAccountService {
      */
     private async saveVirtualAccount(
         userId: string,
-        squadData: any
+        squadData: any,
     ): Promise<VirtualAccountModel> {
-        return await VirtualAccount.create({
+        return VirtualAccount.create({
             userId,
             customerIdentifier: squadData.customer_identifier,
             virtualAccountNumber: squadData.virtual_account_number,
@@ -206,7 +206,7 @@ export class VirtualAccountService {
         } else if (error instanceof SquadError) {
             this.logError(
                 `Squad API error creating virtual account for user ${userId}: ${error.message}`,
-                error
+                error,
             );
         } else {
             this.logError(`Unexpected error creating virtual account for user ${userId}`, error);

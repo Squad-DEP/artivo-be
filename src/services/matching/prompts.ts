@@ -3,7 +3,7 @@ import { WorkerProfile, JobRequest } from './types';
 export const buildMatchingPrompt = (
     worker: WorkerProfile,
     job: JobRequest,
-    traditionalScore: number
+    traditionalScore: number,
 ): string => {
     return `You are a job matching AI. Rate how well this worker matches this job on a scale of 0-100.
 

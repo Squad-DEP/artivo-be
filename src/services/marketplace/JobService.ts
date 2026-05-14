@@ -51,18 +51,18 @@ export class JobService {
     }
 
     async getJobById(id: string): Promise<JobModel | null> {
-        return await Job.findByPk(id);
+        return Job.findByPk(id);
     }
 
     async getJobsByWorker(workerId: string): Promise<JobModel[]> {
-        return await Job.findAll({
+        return Job.findAll({
             where: { workerId },
             order: [['createdAt', 'DESC']],
         });
     }
 
     async getJobsByCustomer(customerId: string): Promise<JobModel[]> {
-        return await Job.findAll({
+        return Job.findAll({
             where: { customerId },
             order: [['createdAt', 'DESC']],
         });
@@ -85,7 +85,7 @@ export class JobService {
             // Update job status
             await Job.update(
                 { status: 'completed', completedAt: new Date() },
-                { where: { id }, transaction }
+                { where: { id }, transaction },
             );
 
             // Get job to update job request

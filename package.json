@@ -15,7 +15,7 @@
   },
   "scripts": {
     "start": "ts-node src/index.ts",
-    "lint": "eslint --fix --ext .ts,.tsx /app/src",
+    "lint": "eslint --fix --ext .ts,.tsx src/",
     "exec:lint": "docker exec -ti express-api npm run lint",
     "typecheck": "tsc --noEmit",
     "build": "tsc",
@@ -73,7 +73,8 @@
     "pg": "^8.20.0",
     "pg-hstore": "^2.3.4",
     "sequelize": "^6.37.8",
-    "sequelize-typescript": "^2.1.6"
+    "sequelize-typescript": "^2.1.6",
+    "skia-canvas": "^3.0.8"
   },
   "devDependencies": {
     "@types/chai": "^4.2.11",

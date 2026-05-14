@@ -7,6 +7,7 @@ import axios from 'axios';
 
 export class OpenAIProvider implements IAIProvider {
     private apiKey: string;
+
     private baseURL: string = 'https://api.openai.com/v1';
 
     constructor() {
@@ -23,14 +24,14 @@ export class OpenAIProvider implements IAIProvider {
             }
 
             const messages: any[] = [
-                { role: 'system', content: prompt }
+                { role: 'system', content: prompt },
             ];
 
             if (context && context.length > 0) {
                 context.forEach((msg, i) => {
                     messages.push({
                         role: i % 2 === 0 ? 'user' : 'assistant',
-                        content: msg
+                        content: msg,
                     });
                 });
             }
@@ -41,26 +42,26 @@ export class OpenAIProvider implements IAIProvider {
                 `${this.baseURL}/chat/completions`,
                 {
                     model: 'gpt-4',
-                    messages
+                    messages,
                 },
                 {
                     headers: {
                         'Authorization': `Bearer ${this.apiKey}`,
-                        'Content-Type': 'application/json'
-                    }
-                }
+                        'Content-Type': 'application/json',
+                    },
+                },
             );
 
             return {
                 success: true,
                 response: response.data.choices?.[0]?.message?.content,
-                data: response.data
+                data: response.data,
             };
         } catch (error: any) {
             console.error('OpenAI API Error:', error.message);
             return {
                 success: false,
-                error: error.message
+                error: error.message,
             };
         }
     }

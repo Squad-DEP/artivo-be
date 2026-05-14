@@ -7,6 +7,7 @@ import axios from 'axios';
 
 export class WhisperProvider implements ISpeechProvider {
     private apiKey: string;
+
     private baseURL: string = 'https://api.openai.com/v1';
 
     constructor() {
@@ -29,26 +30,26 @@ export class WhisperProvider implements ISpeechProvider {
                 {
                     file: audioData,
                     model: 'whisper-1',
-                    ...options
+                    ...options,
                 },
                 {
                     headers: {
                         'Authorization': `Bearer ${this.apiKey}`,
-                        'Content-Type': 'multipart/form-data'
-                    }
-                }
+                        'Content-Type': 'multipart/form-data',
+                    },
+                },
             );
 
             return {
                 success: true,
                 text: response.data.text,
-                language: response.data.language
+                language: response.data.language,
             };
         } catch (error: any) {
             console.error('Whisper API Error:', error.message);
             return {
                 success: false,
-                error: error.message
+                error: error.message,
             };
         }
     }
