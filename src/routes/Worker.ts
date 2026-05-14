@@ -3,6 +3,8 @@ import passport from './../providers/Passport';
 import express from 'express';
 import { WorkerProfile } from '../models/WorkerProfile';
 import { User } from '../models/User';
+import { QueryTypes } from 'sequelize';
+import { sequelize } from '../providers/db';
 import { WorkerController } from '../controllers/WorkerController';
 import { WorkerJobService } from '../services/marketplace/WorkerJobService';
 import { JobService } from '../services/marketplace/JobService';
@@ -319,13 +321,31 @@ app.get('/worker/profile/me', [
 ], async (req: express.Request, res: express.Response, next: express.NextFunction) => {
     try {
         const profile = await findOrCreateWorkerProfile(req.user.id);
+
+        // Fetch phone + email from users, rating from reputation_scores in one query
+        const [extra] = await sequelize.query<{
+            phone: string | null;
+            email: string;
+            average_rating: number;
+        }>(
+            `SELECT u.phone, u.email, COALESCE(rs.average_rating, 0) AS average_rating
+             FROM users u
+             LEFT JOIN reputation_scores rs ON rs.user_id = u.id
+             WHERE u.id = $1`,
+            { bind: [req.user.id], type: QueryTypes.SELECT }
+        );
+
         return res.json({
             display_name: profile.displayName,
             photo_url: profile.photoUrl,
             bio: profile.bio,
+            tagline: profile.tagline ?? null,
             skills: profile.skills,
             location: profile.location,
             share_slug: profile.shareSlug,
+            phone: extra?.phone ?? null,
+            email: extra?.email ?? null,
+            average_rating: Number(extra?.average_rating ?? 0),
         });
     } catch (error) {
         return next(error);

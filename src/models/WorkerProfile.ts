@@ -7,6 +7,7 @@ export interface WorkerProfileModel extends Model<InferAttributes<WorkerProfileM
     displayName: string;
     photoUrl: CreationOptional<string> | null;
     bio: CreationOptional<string> | null;
+    tagline: CreationOptional<string> | null;
     skills: CreationOptional<string[]>;
     location: CreationOptional<string> | null;
     shareSlug: string;
@@ -32,6 +33,10 @@ export const WorkerProfile = sequelize.define<WorkerProfileModel>('worker_profil
     },
     bio: {
         type: DataTypes.TEXT,
+        allowNull: true,
+    },
+    tagline: {
+        type: DataTypes.STRING(100),
         allowNull: true,
     },
     skills: {
