@@ -8,6 +8,7 @@ import { JobService } from '../services/marketplace/JobService';
 import { PaymentService } from '../services/marketplace/PaymentService';
 import { EscrowService } from '../services/marketplace/EscrowService';
 import { ReviewService } from '../services/marketplace/ReviewService';
+import { PayoutService } from '../services/marketplace/PayoutService';
 import MatchingService from '../services/matching/MatchingService';
 
 export const app = express.Router();
@@ -18,6 +19,7 @@ const jobService = new JobService(jobRequestService);
 const escrowService = new EscrowService();
 const paymentService = new PaymentService(jobService, escrowService);
 const reviewService = new ReviewService();
+const payoutService = new PayoutService();
 const matchingService = MatchingService;
 
 const customerController = new CustomerController(
@@ -69,6 +71,7 @@ app.post('/customer/hire', [
     body('job_request_id').if(body('proposal_id').not().exists()).exists().isUUID(),
     body('worker_id').if(body('proposal_id').not().exists()).exists().isUUID(),
     body('amount').if(body('proposal_id').not().exists()).exists().isFloat({ min: 0 }),
+    body('payment_method').optional().isIn(['online', 'offline']),
 ], async (req: express.Request, res: express.Response, next: express.NextFunction) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) return res.status(422).json({ errors: errors.mapped() });
@@ -173,6 +176,69 @@ app.get('/customer/my-jobs', [
  *       200:
  *         description: Customer job statistics
  */
+app.get('/customer/advance-requests/:job_id', [
+    passport.authenticate('jwt', { session: false }),
+    param('job_id').exists().isUUID(),
+], async (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    try {
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) return res.status(422).json({ errors: errors.mapped() });
+
+        const requests = await escrowService.getAdvanceRequests(req.params.job_id);
+        return res.json({ advance_requests: requests });
+    } catch (error) {
+        return next(error);
+    }
+});
+
+app.post('/customer/approve-advance/:request_id', [
+    passport.authenticate('jwt', { session: false }),
+    param('request_id').exists().isUUID(),
+], async (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    try {
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) return res.status(422).json({ errors: errors.mapped() });
+
+        const request = await escrowService.approveAdvance(req.params.request_id, req.user.id);
+
+        // Transfer advance amount directly to worker's bank via Squad
+        const payout = await payoutService.initiateAdvancePayout(
+            request.workerId,
+            Number(request.amount),
+            request.jobId,
+            request.id
+        );
+
+        return res.json({ advance_request: request, payout_reference: payout.reference });
+    } catch (error: any) {
+        if (error.message?.includes('Not authorised') || error.message?.includes('already')) {
+            return res.status(400).json({ msg: error.message });
+        }
+        if (error.message?.includes('bank account')) {
+            return res.status(400).json({ msg: error.message });
+        }
+        return next(error);
+    }
+});
+
+app.post('/customer/reject-advance/:request_id', [
+    passport.authenticate('jwt', { session: false }),
+    param('request_id').exists().isUUID(),
+], async (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    try {
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) return res.status(422).json({ errors: errors.mapped() });
+
+        const request = await escrowService.rejectAdvance(req.params.request_id, req.user.id);
+        return res.json({ advance_request: request });
+    } catch (error: any) {
+        if (error.message?.includes('Not authorised') || error.message?.includes('already')) {
+            return res.status(400).json({ msg: error.message });
+        }
+        return next(error);
+    }
+});
+
 app.get('/jobs/stats/customer', [
     passport.authenticate('jwt', { session: false }),
 ], async (req: express.Request, res: express.Response, next: express.NextFunction) => {

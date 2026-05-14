@@ -18,6 +18,8 @@ const generateJWT = (user: UserModel, signOptions: SignOptions) => {
     const payload = {
         id: user.get('id'),
         email: user.get('email'),
+        role: user.get('role'),
+        onboarded: user.get('onboarded') ?? false,
     };
 
     return sign(

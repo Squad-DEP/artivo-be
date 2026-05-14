@@ -1,4 +1,5 @@
 import type { EscrowStatus } from '../models/EscrowEntry';
+import type { AdvanceRequestStatus } from '../models/EscrowAdvanceRequest';
 import type { JobStatus } from '../models/Job';
 import type { JobRequestStatus } from '../models/JobRequest';
 import type { WithdrawalStatus } from '../models/WithdrawalLog';
@@ -13,6 +14,7 @@ export const ESCROW_STATUS: Record<Uppercase<EscrowStatus>, EscrowStatus> = {
 
 export const JOB_STATUS: Record<Uppercase<JobStatus>, JobStatus> = {
     PENDING: 'pending',
+    PENDING_PAYMENT: 'pending_payment',
     IN_PROGRESS: 'in_progress',
     COMPLETED: 'completed',
     PAID: 'paid',
@@ -44,6 +46,12 @@ export const PAYMENT_STATUS = {
     COMPLETED: 'completed',
     FAILED: 'failed',
     PENDING: 'pending',
+} as const;
+
+export const ADVANCE_REQUEST_STATUS: Record<Uppercase<AdvanceRequestStatus>, AdvanceRequestStatus> = {
+    PENDING: 'pending',
+    APPROVED: 'approved',
+    REJECTED: 'rejected',
 } as const;
 
 export const USER_ROLE = {

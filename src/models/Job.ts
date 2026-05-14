@@ -2,7 +2,8 @@ import { Model, InferAttributes, InferCreationAttributes, CreationOptional } fro
 import sequelize from '../providers/db';
 import { DataTypes } from 'sequelize';
 
-export type JobStatus = 'pending' | 'in_progress' | 'completed' | 'paid';
+export type JobStatus = 'pending' | 'pending_payment' | 'in_progress' | 'completed' | 'paid';
+export type PaymentMethod = 'online' | 'offline';
 
 export interface JobModel extends Model<InferAttributes<JobModel>, InferCreationAttributes<JobModel>> {
     id: CreationOptional<string>;
@@ -11,6 +12,8 @@ export interface JobModel extends Model<InferAttributes<JobModel>, InferCreation
     customerId: string;
     amount: number;
     status: CreationOptional<JobStatus>;
+    paymentMethod: CreationOptional<PaymentMethod>;
+    payoutReference: CreationOptional<string> | null;
     completedAt: CreationOptional<Date> | null;
     createdAt: CreationOptional<Date>;
 }
@@ -45,6 +48,17 @@ export const Job = sequelize.define<JobModel>('job', {
         type: DataTypes.STRING(20),
         allowNull: false,
         defaultValue: 'pending',
+    },
+    paymentMethod: {
+        type: DataTypes.STRING(20),
+        allowNull: false,
+        defaultValue: 'online',
+        field: 'payment_method',
+    },
+    payoutReference: {
+        type: DataTypes.STRING(255),
+        allowNull: true,
+        field: 'payout_reference',
     },
     completedAt: {
         type: DataTypes.DATE,

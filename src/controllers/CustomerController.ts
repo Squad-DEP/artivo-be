@@ -5,6 +5,7 @@ import { JobService } from '../services/marketplace/JobService';
 import { PaymentService } from '../services/marketplace/PaymentService';
 import { EscrowService } from '../services/marketplace/EscrowService';
 import { ReviewService } from '../services/marketplace/ReviewService';
+import { PayoutService } from '../services/marketplace/PayoutService';
 import MatchingService from '../services/matching/MatchingService';
 import { JOB_STATUS, USER_ROLE } from '../constants/statuses';
 import { JobProposal } from '../models/JobProposal';
@@ -20,7 +21,8 @@ export class CustomerController {
         private paymentService: PaymentService,
         private escrowService: EscrowService,
         private reviewService: ReviewService,
-        private matchingService: typeof MatchingService
+        private matchingService: typeof MatchingService,
+        private payoutService: PayoutService = new PayoutService()
     ) {}
 
     async getFeed(req: express.Request, res: express.Response, next: express.NextFunction) {
@@ -89,72 +91,59 @@ export class CustomerController {
 
     async hire(req: express.Request, res: express.Response, next: express.NextFunction) {
         try {
-            let { job_request_id, worker_id, amount, proposal_id } = req.body;
+            let { job_request_id, worker_id, amount, proposal_id, payment_method } = req.body;
+            const paymentMethod: 'online' | 'offline' = payment_method === 'offline' ? 'offline' : 'online';
 
-            // If proposal_id provided, resolve job_request_id, worker_id, and amount from the proposal
             if (proposal_id) {
                 const proposal = await JobProposal.findByPk(proposal_id);
-                if (!proposal) {
-                    return res.status(404).json({ msg: 'Proposal not found' });
-                }
+                if (!proposal) return res.status(404).json({ msg: 'Proposal not found' });
                 job_request_id = proposal.jobRequestId;
                 worker_id = proposal.workerId;
                 amount = Number(proposal.proposedAmount);
             }
 
-            const isOwner = await this.jobRequestService.verifyJobRequestOwnership(
-                job_request_id,
-                req.user.id
-            );
-            if (!isOwner) {
-                return res.status(404).json({ msg: 'Job request not found or already assigned' });
-            }
+            const isOwner = await this.jobRequestService.verifyJobRequestOwnership(job_request_id, req.user.id);
+            if (!isOwner) return res.status(404).json({ msg: 'Job request not found or already assigned' });
 
-            // Require sufficient virtual account balance before proceeding
-            const balanceCheck = await this.escrowService.checkAndDeductBalance(req.user.id, amount);
-            if (!balanceCheck.ok) {
-                return res.status(402).json({
-                    msg: 'Insufficient balance. Please fund your virtual account before hiring.',
-                    available_balance: balanceCheck.balance,
-                    required: amount,
-                });
-            }
+            const { job, escrow } = await sequelize.transaction(async (t) => {
+                // Online: job starts in pending_payment — escrow pending until Squad confirms
+                // Offline: job starts in_progress immediately — no Squad payment
+                const initialStatus = paymentMethod === 'offline' ? JOB_STATUS.IN_PROGRESS : JOB_STATUS.PENDING_PAYMENT;
 
-            const job = await this.jobService.createJob({
-                jobRequestId: job_request_id,
-                workerId: worker_id,
-                customerId: req.user.id,
-                amount,
+                const job = await this.jobService.createJob(
+                    { jobRequestId: job_request_id, workerId: worker_id, customerId: req.user.id, amount, paymentMethod },
+                    t
+                );
+
+                await this.jobService.updateJobStatus(job.id, initialStatus, t);
+
+                // Create escrow entry — funded immediately for offline, pending for online
+                const escrow = paymentMethod === 'offline'
+                    ? await this.escrowService.createEscrowFunded(
+                        { jobId: job.id, customerId: req.user.id, workerId: worker_id, amount }, t
+                      )
+                    : await this.escrowService.createEscrow(
+                        { jobId: job.id, customerId: req.user.id, workerId: worker_id, amount }
+                      );
+
+                if (proposal_id) {
+                    await JobProposal.update({ status: 'accepted' }, { where: { id: proposal_id }, transaction: t });
+                    await JobProposal.update(
+                        { status: 'rejected' },
+                        { where: { jobRequestId: job_request_id, status: 'pending' }, transaction: t }
+                    );
+                }
+
+                return { job, escrow };
             });
 
-            const escrow = await this.escrowService.createEscrow({
-                jobId: job.id,
-                customerId: req.user.id,
-                workerId: worker_id,
-                amount,
+            return res.json({
+                job,
+                escrow,
+                // Tell the frontend whether to open Squad checkout
+                requires_payment: paymentMethod === 'online',
             });
-
-            // Immediately fund the escrow since payment was deducted from balance
-            await this.escrowService.fundEscrow(job.id);
-            await this.jobService.updateJobStatus(job.id, JOB_STATUS.IN_PROGRESS);
-
-            // If hired via proposal, mark accepted proposal and reject all others for this job request
-            if (proposal_id) {
-                await JobProposal.update(
-                    { status: 'accepted' },
-                    { where: { id: proposal_id } }
-                );
-                await JobProposal.update(
-                    { status: 'rejected' },
-                    { where: { jobRequestId: job_request_id, status: 'pending' } }
-                );
-            }
-
-            return res.json({ job, escrow });
         } catch (error: any) {
-            if (error.message === 'Virtual account not found') {
-                return res.status(404).json({ msg: 'Virtual account not found. Please contact support.' });
-            }
             return next(error);
         }
     }
@@ -249,10 +238,14 @@ export class CustomerController {
 
             if (result.released) {
                 await this.jobService.completeJob(job_id);
+                const payout = await this.payoutService.initiateJobPayout(job_id);
                 return res.json({
                     success: true,
-                    msg: 'Both parties confirmed. Job completed and escrow released to worker.',
+                    msg: payout.skipped
+                        ? 'Job completed. This was an offline job — no transfer needed.'
+                        : 'Both parties confirmed. Payment is being transferred to the worker.',
                     released: true,
+                    payout_reference: payout.reference,
                 });
             }
 
@@ -265,6 +258,9 @@ export class CustomerController {
             });
         } catch (error: any) {
             if (error.message?.includes('Escrow not found') || error.message?.includes('payment must be confirmed')) {
+                return res.status(400).json({ msg: error.message });
+            }
+            if (error.message?.includes('bank account')) {
                 return res.status(400).json({ msg: error.message });
             }
             return next(error);

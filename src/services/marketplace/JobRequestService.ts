@@ -34,8 +34,8 @@ export class JobRequestService {
         });
     }
 
-    async updateJobRequestStatus(id: string, status: JobRequestStatus): Promise<void> {
-        await JobRequest.update({ status }, { where: { id } });
+    async updateJobRequestStatus(id: string, status: JobRequestStatus, t?: any): Promise<void> {
+        await JobRequest.update({ status }, { where: { id }, ...(t ? { transaction: t } : {}) });
     }
 
     async verifyJobRequestOwnership(id: string, customerId: string): Promise<boolean> {
