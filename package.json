@@ -61,6 +61,7 @@
     "express-fileupload": "^1.5.0",
     "express-rate-limit": "^8.2.1",
     "express-validator": "^7.1.0",
+    "groq-sdk": "^1.2.0",
     "helmet": "^7.1.0",
     "minimist": "^1.2.8",
     "mocha-ts": "^0.0.0",

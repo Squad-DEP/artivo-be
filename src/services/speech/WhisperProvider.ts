@@ -13,7 +13,7 @@ export class WhisperProvider implements ISpeechProvider {
     constructor() {
         this.apiKey = process.env.OPENAI_API_KEY || '';
         if (!this.apiKey) {
-            console.warn('⚠️  OPENAI_API_KEY not set! Whisper STT will not work.');
+            console.warn(' OPENAI_API_KEY not set! Whisper STT will not work.');
         }
     }
 

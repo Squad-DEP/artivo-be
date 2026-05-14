@@ -19,7 +19,7 @@ export class GeminiProvider implements IAIProvider {
     constructor() {
         this.apiKey = process.env.GEMINI_API_KEY || '';
         if (!this.apiKey) {
-            console.warn('⚠️  GEMINI_API_KEY not set! Gemini AI will not work.');
+            console.warn('GEMINI_API_KEY not set! Gemini AI will not work.');
         }
         this.ai = new GoogleGenAI({ apiKey: this.apiKey });
         this.fileManager = new GoogleAIFileManager(this.apiKey);
@@ -28,6 +28,7 @@ export class GeminiProvider implements IAIProvider {
     async process(prompt: string, userInput: string, context?: string[]): Promise<AIResult> {
         let tempFilePath: string | null = null;
         try {
+            console.log("Gemini attempting to transcribe audio")
             if (!this.apiKey) {
                 throw new Error('Gemini API key not configured');
             }
@@ -81,6 +82,8 @@ export class GeminiProvider implements IAIProvider {
 
             // Directly parse raw structured string cleanly
             const parsedData = JSON.parse(rawText.trim());
+
+            console.log("Gemini final response");
 
             return {
                 success: true,

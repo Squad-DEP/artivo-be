@@ -6,31 +6,68 @@
 import { IAIProvider, AIResult } from './IAIProvider';
 import { GeminiProvider } from './GeminiProvider';
 import { OpenAIProvider } from './OpenAIProvider';
+import { GroqProvider } from './GroqProvider';
 
 class AIService {
-    private provider: IAIProvider;
+    private providers: IAIProvider[];
 
     constructor() {
-        // Select provider based on env variable
-        const providerName = process.env.AI_PROVIDER || 'gemini';
-        
-        switch (providerName.toLowerCase()) {
-            case 'gemini':
-                this.provider = new GeminiProvider();
-                break;
-            case 'openai':
-                this.provider = new OpenAIProvider();
-                break;
-            // Add more providers:
-            // case 'claude':
-            //     this.provider = new ClaudeProvider();
-            //     break;
-            default:
-                console.warn(`Unknown AI provider: ${providerName}, defaulting to Gemini`);
-                this.provider = new GeminiProvider();
-        }
+        this.providers = [
+            new GeminiProvider(),
+            new GroqProvider(),
+        ];
     }
 
+    private async executeWithFallback(prompt: string, userInput: string, context?: string[]): Promise<AIResult> {
+        let lastError = "";
+    
+        // Loop through all registered providers (Gemini, then Groq)
+        for (let i = 0; i < this.providers.length; i++) {
+            const provider = this.providers[i];
+            const providerName = provider instanceof GeminiProvider ? "Gemini" : "Groq";
+            
+            console.log(`Attempting request with ${providerName}...`);
+            
+            const result = await provider.process(prompt, userInput, context);
+    
+            if (result.success) {
+                return result;
+            }
+    
+            // If we reach here, the current provider failed.
+            lastError = result.error || "Unknown error";
+            const errorString = JSON.stringify(lastError).toLowerCase();
+    
+            // Specific check for "Try again later" / "High demand" / "Overloaded"
+            const isOverloaded = 
+                errorString.includes("503") || 
+                errorString.includes("high demand") || 
+                errorString.includes("unavailable") ||
+                errorString.includes("rate_limit"); // Added for Groq safety
+    
+            if (isOverloaded) {
+                console.warn(`${providerName} is overloaded or down. Error: ${lastError}`);
+                
+                // If there's another provider in the array, the loop continues to the next one
+                if (i < this.providers.length - 1) {
+                    console.log(`🔄 Switching to next available provider...`);
+                    continue; 
+                }
+            } else {
+                // If it's a fatal error (like a bad prompt or code bug), 
+                // you might want to stop immediately, but for a hackathon, 
+                // it's safer to try the fallback anyway.
+                continue;
+            }
+        }
+    
+        // If the loop finishes and nothing worked:
+        return { 
+            success: false, 
+            error: `All AI providers failed. Last error: ${lastError}` 
+        };
+    }
+    
     /**
      * Process onboarding conversation
      */
@@ -76,7 +113,7 @@ class AIService {
             }
             Do not return any conversational text or markdown blocks, only return raw stringified JSON.`;
         }
-        return this.provider.process(prompt, userInput, context);
+        return this.executeWithFallback(prompt, userInput, context);
     }
 
     /**
@@ -84,7 +121,7 @@ class AIService {
      */
     async chat(message: string, context?: string[]): Promise<AIResult> {
         const prompt = 'You are a helpful assistant for the Artivo platform, connecting artisans with customers.';
-        return this.provider.process(prompt, message, context);
+        return this.executeWithFallback(prompt, message, context);
     }
 }
 

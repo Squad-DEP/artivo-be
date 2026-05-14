@@ -5,7 +5,7 @@ import path from "path";
 import AIService from "../../src/services/ai/AIService";
 
 async function liveVerify() {
-    console.log("🎙️ Initiating Gemini Multimodal Audio Test...");
+    console.log("🎙️ Initiating Multimodal Audio Test...");
 
     // 1. Path to your test audio file (ensure this file exists!)
     // Supports: .wav, .mp3, .aiff, .aac, .ogg, .flac
@@ -23,19 +23,19 @@ async function liveVerify() {
         const audioBuffer = fs.readFileSync(audioFilePath);
         const base64Audio = audioBuffer.toString("base64");
 
-        console.log("⏳ Sending Audio to Gemini for direct transcription and parsing...");
+        console.log(" Sending Audio for direct transcription and parsing...");
         
         // 3. Call the AIService (it will pass the base64 to GeminiProvider)
-        const outcome = await AIService.chat(base64Audio);
+        const outcome = await AIService.processOnboarding(base64Audio, 'artisan');
 
         if (outcome.success) {
-            console.log("SUCCESS! Gemini heard the audio and extracted this:");
+            console.log("SUCCESS! heard the audio and extracted this:");
             console.log(JSON.stringify(outcome.data, null, 4));
         } else {
-            console.error("🚨 FAILURE! Extraction Error:", outcome.error);
+            console.error("FAILURE! Extraction Error:", outcome.error);
         }
     } catch (error) {
-        console.error("🚨 Test Crash:", error);
+        console.error("Test Crash:", error);
     }
 }
 
