@@ -1,7 +1,7 @@
 import { SquadService } from './SquadService';
 import { VirtualAccount, VirtualAccountModel } from '../../models/VirtualAccount';
 import { User, UserModel } from '../../models/User';
-import { SquadError, SquadDuplicateCustomerError } from './SquadErrors';
+import { SquadError, SquadDuplicateCustomerError, SquadAccountLimitError } from './SquadErrors';
 
 export class VirtualAccountService {
     private squadService: SquadService;
@@ -239,11 +239,53 @@ export class VirtualAccountService {
     /**
      * Handle errors during virtual account creation
      */
+    /**
+     * For demo, create a mock virtual account locally when Squad is unavailable.
+     * Generates a deterministic NUBAN-style account number from the user's UUID.
+     */
+    async createMockVirtualAccount(
+        user: UserModel,
+        kyc?: { first_name?: string; last_name?: string }
+    ): Promise<VirtualAccountModel> {
+        const existing = await this.getVirtualAccountByUserId(user.id);
+        if (existing) return existing;
+
+        const { firstName: defaultFirst, lastName: defaultLast } = this.parseFullName(user.fullName);
+        const firstName = kyc?.first_name || defaultFirst;
+        const lastName = kyc?.last_name || defaultLast;
+
+        const accountNumber = this.generateNUBAN(user.id);
+
+        const account = await VirtualAccount.create({
+            userId: user.id,
+            customerIdentifier: `MOCK_${user.id}`,
+            virtualAccountNumber: accountNumber,
+            virtualAccountName: `${firstName} ${lastName}`,
+            bankName: 'GTCO',
+            bankCode: '058',
+        });
+
+        this.logSuccess(`Mock virtual account created for user ${user.id}: ${accountNumber}`);
+        return account;
+    }
+
+    /**
+     * Generate a deterministic 10-digit NUBAN-style account number from a UUID.
+     */
+    private generateNUBAN(userId: string): string {
+        const hex = userId.replace(/-/g, '').slice(0, 8);
+        const num = parseInt(hex, 16) % 100000000;
+        return `82${num.toString().padStart(8, '0')}`;
+    }
+
     private handleVirtualAccountCreationError(error: any, userId: string): null {
-        // Log the error with context
+        if (error instanceof SquadAccountLimitError) {
+            this.logWarning(`Squad sandbox account opening limit reached for user ${userId}`);
+            throw error;
+        }
+
         if (error instanceof SquadDuplicateCustomerError) {
             this.logWarning(`Virtual account already exists in Squad for user ${userId}`);
-            // Try to sync from Squad
             this.syncVirtualAccountFromSquad(userId).catch((syncError) => {
                 this.logError('Failed to sync existing virtual account', syncError);
             });
@@ -256,8 +298,6 @@ export class VirtualAccountService {
             this.logError(`Unexpected error creating virtual account for user ${userId}`, error);
         }
 
-        // Don't throw - virtual account creation failure shouldn't block user flow
-        // The user can still use the platform, just without payment capabilities
         return null;
     }
 

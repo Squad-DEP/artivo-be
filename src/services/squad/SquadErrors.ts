@@ -97,9 +97,20 @@ export class SquadBVNMismatchError extends SquadError {
     }
 }
 
+export class SquadAccountLimitError extends SquadError {
+    constructor(message: string = 'Merchant has reached account opening limit') {
+        super(message, SquadErrorCode.ACCOUNT_LIMIT_REACHED, 422, false);
+        this.name = 'SquadAccountLimitError';
+    }
+}
+
 export function createSquadError(statusCode: number, responseData: any, operation: string): SquadError {
     const message = responseData?.message || 'Unknown error';
     const data = responseData?.data || {};
+
+    if (statusCode === 422 && message.toLowerCase().includes('account opening limit')) {
+        return new SquadAccountLimitError(message);
+    }
 
     if (statusCode === 400) {
         if (message.toLowerCase().includes('bvn')) {

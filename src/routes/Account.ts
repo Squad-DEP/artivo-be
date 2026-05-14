@@ -4,12 +4,17 @@ import express from 'express';
 import { VirtualAccountService } from '../services/squad/VirtualAccountService';
 import { SquadService } from '../services/squad/SquadService';
 import { WithdrawalService } from '../services/marketplace/WithdrawalService';
+import { EscrowService } from '../services/marketplace/EscrowService';
+import { SquadAccountLimitError } from '../services/squad/SquadErrors';
+import { VirtualAccount } from '../models/VirtualAccount';
+import { User } from '../models/User';
 
 export const app = express.Router();
 
 const virtualAccountService = new VirtualAccountService();
 const squadService = new SquadService();
 const withdrawalService = new WithdrawalService(squadService);
+const escrowService = new EscrowService();
 
 /**
  * @openapi
@@ -93,7 +98,20 @@ app.post('/account/ensure-setup', [
             bvn: string; dob: string; gender: '1' | '2'; address: string;
         };
 
-        const account = await virtualAccountService.ensureSetupForUser(req.user.id, { first_name, last_name, phone, bvn, dob, gender, address });
+        let account;
+        try {
+            account = await virtualAccountService.ensureSetupForUser(req.user.id, { first_name, last_name, phone, bvn, dob, gender, address });
+        } catch (err) {
+            if (err instanceof SquadAccountLimitError) {
+                // Squad sandbox limit hit — fall back to mock account generation
+                const user = await User.findByPk(req.user.id);
+                if (user) {
+                    account = await virtualAccountService.createMockVirtualAccount(user, { first_name, last_name });
+                }
+            } else {
+                throw err;
+            }
+        }
 
         if (!account) {
             return res.status(503).json({ msg: 'Could not create virtual account. Squad may not be configured.' });
@@ -373,6 +391,113 @@ app.get('/account/withdrawals', [
     try {
         const withdrawals = await withdrawalService.getWithdrawalHistory(req.user.id);
         return res.json({ withdrawals });
+    } catch (error) {
+        return next(error);
+    }
+});
+
+/**
+ * @openapi
+ * /account/simulate-deposit:
+ *   post:
+ *     description: >
+ *       DEMO ONLY — Simulate a bank deposit by directly crediting the virtual account balance.
+ *       Use this for hackathon demo purposes when real bank transfers aren't available.
+ *     tags: [Account]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [amount]
+ *             properties:
+ *               amount:
+ *                 type: number
+ *                 description: Amount in NGN to credit
+ */
+app.post('/account/simulate-deposit', [
+    passport.authenticate('jwt', { session: false }),
+    body('amount').isFloat({ min: 1 }).withMessage('Amount must be at least ₦1'),
+], async (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) return res.status(422).json({ errors: errors.mapped() });
+
+    try {
+        const account = await virtualAccountService.getVirtualAccountByUserId(req.user.id);
+        if (!account) {
+            return res.status(404).json({ msg: 'Virtual account not found. Set one up first.' });
+        }
+
+        const amount = parseFloat(req.body.amount);
+        await escrowService.creditBalance(req.user.id, amount);
+
+        const updated = await virtualAccountService.getVirtualAccountByUserId(req.user.id);
+        return res.json({
+            msg: `Deposit of ₦${amount.toLocaleString()} credited successfully`,
+            balance: Number(updated!.balance),
+            total_deposited: Number(updated!.totalDeposited),
+        });
+    } catch (error) {
+        return next(error);
+    }
+});
+
+/**
+ * @openapi
+ * /account/claim:
+ *   post:
+ *     description: >
+ *       Claim an existing virtual account by its account number.
+ *       Used to link a pre-seeded real Squad account to your user.
+ *     tags: [Account]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [account_number]
+ *             properties:
+ *               account_number:
+ *                 type: string
+ */
+app.post('/account/claim', [
+    passport.authenticate('jwt', { session: false }),
+    body('account_number').trim().notEmpty().withMessage('Account number is required'),
+], async (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) return res.status(422).json({ errors: errors.mapped() });
+
+    try {
+        const existing = await virtualAccountService.getVirtualAccountByUserId(req.user.id);
+        if (existing) {
+            return res.status(409).json({ msg: 'You already have a virtual account linked to your profile.' });
+        }
+
+        const { account_number } = matchedData(req) as { account_number: string };
+        const account = await VirtualAccount.findOne({ where: { virtualAccountNumber: account_number } });
+        if (!account) {
+            return res.status(404).json({ msg: 'Virtual account not found.' });
+        }
+
+        await account.update({ userId: req.user.id });
+
+        return res.json({
+            msg: 'Virtual account claimed and linked to your profile.',
+            virtual_account: {
+                account_number: account.virtualAccountNumber,
+                account_name: account.virtualAccountName,
+                bank_name: account.bankName,
+                bank_code: account.bankCode,
+                balance: Number(account.balance ?? 0),
+                total_deposited: Number(account.totalDeposited ?? 0),
+            },
+        });
     } catch (error) {
         return next(error);
     }
