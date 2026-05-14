@@ -1,5 +1,5 @@
 import { body, validationResult, matchedData } from 'express-validator';
-import { ArtisanDataDTO, identityCardService } from 'services/business_card/businessCardService';
+import { ArtisanDataDTO, identityCardService } from '../services/business_card/businessCardService';
 import express from 'express';
 import passport from '../providers/Passport';
 

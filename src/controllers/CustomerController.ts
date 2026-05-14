@@ -10,6 +10,7 @@ import MatchingService from '../services/matching/MatchingService';
 import { JOB_STATUS, USER_ROLE } from '../constants/statuses';
 import { JobProposal } from '../models/JobProposal';
 import { JobRequest } from '../models/JobRequest';
+import { Job } from '../models/Job';
 import { QueryTypes } from 'sequelize';
 import { sequelize } from '../providers/db';
 
@@ -100,6 +101,20 @@ export class CustomerController {
                 job_request_id = proposal.jobRequestId;
                 worker_id = proposal.workerId;
                 amount = Number(proposal.proposedAmount);
+            }
+
+            // Idempotency: if a pending_payment job already exists for this customer+job_request
+            // (e.g. payment was cancelled and they're retrying), return it instead of erroring.
+            const existingPendingJob = await Job.findOne({
+                where: { jobRequestId: job_request_id, customerId: req.user.id, status: JOB_STATUS.PENDING_PAYMENT },
+            });
+            if (existingPendingJob) {
+                const existingEscrow = await this.escrowService.getEscrowByJobId(existingPendingJob.id);
+                return res.json({
+                    job: existingPendingJob,
+                    escrow: existingEscrow,
+                    requires_payment: true,
+                });
             }
 
             const isOwner = await this.jobRequestService.verifyJobRequestOwnership(job_request_id, req.user.id);
