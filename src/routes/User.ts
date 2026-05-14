@@ -1,14 +1,24 @@
-import { body, validationResult, matchedData } from 'express-validator';
+import { body, param, validationResult, matchedData } from 'express-validator';
 import passport from './../providers/Passport';
 import middleware from './middleware';
-import User from './../models/User';
-import bcrypt from 'bcryptjs';
 import express from 'express';
 import { JobService } from '../services/marketplace/JobService';
 import { JobRequestService } from '../services/marketplace/JobRequestService';
+import { 
+    UserService, 
+    PasswordService, 
+    EmailVerificationService, 
+    UserJobQueryService 
+} from '../services/user';
+import { VirtualAccountService } from '../services/squad/VirtualAccountService';
 
 const jobRequestService = new JobRequestService();
 const jobService = new JobService(jobRequestService);
+const userService = new UserService();
+const passwordService = new PasswordService();
+const emailVerificationService = new EmailVerificationService();
+const userJobQueryService = new UserJobQueryService();
+const virtualAccountService = new VirtualAccountService();
 
 export const app = express.Router();
 
@@ -41,9 +51,8 @@ app.get('/user', [
     passport.authenticate('jwt', { session: false }),
 ], async (req: express.Request, res: express.Response, next: express.NextFunction) => {
     try {
-        return res.json(await User.findByPk(req.user.id, {
-            rejectOnEmpty: true,
-        }));
+        const user = await userService.getUserById(req.user.id);
+        return res.json(user);
     } catch (error) {
         return next(error);
     }
@@ -88,9 +97,9 @@ app.post('/user', [
     try {
         const errors = validationResult(req);
         if (!errors.isEmpty()) return res.status(422).json({ errors: errors.mapped() });
+        
         const data = matchedData(req);
-        const user = await User.findByPk(req.user.id, { rejectOnEmpty: true });
-        await user.update(data);
+        const user = await userService.updateUser(req.user.id, data);
         return res.json(user);
     } catch (error) {
         return next(error);
@@ -120,17 +129,8 @@ app.post('/user/resend-verification-email', [
     passport.authenticate('jwt', { session: false }),
 ], async (req: express.Request, res: express.Response, next: express.NextFunction) => {
     try {
-        const user = await User.findByPk(req.user.id, { rejectOnEmpty: true });
-        await user.update({
-            emailVerificationKey: String(Math.floor(Math.random() * (999999 - 111111 + 1)) + 111111),
-        });
-
-        //////////////////////////////////////////
-        // EMAIL THIS LINK TO THE USER
-        if (typeof global.it !== 'function') console.log(`\n\nEMAIL THIS CODE TO THE USER\nCODE: ${user.emailVerificationKey}\n\n`);
-        //////////////////////////////////////////
-
-        return res.json({ email: user.email });
+        const result = await emailVerificationService.resendVerificationEmail(req.user.id);
+        return res.json({ email: result.email });
     } catch (error) {
         return next(error);
     }
@@ -157,30 +157,17 @@ app.post('/user/resend-verification-email', [
  */
 app.post('/user/update-password', [
     passport.authenticate('jwt', { session: false }),
-
-    body('newPassword')
-        .notEmpty()
-        .exists(),
-    body('password')
-        .notEmpty()
-        .exists(),
-
+    body('newPassword').notEmpty().exists(),
+    body('password').notEmpty().exists(),
     middleware.checkPassword,
     middleware.isStrongPassword,
 ], async (req: express.Request, res: express.Response, next: express.NextFunction) => {
     try {
         const errors = validationResult(req);
         if (!errors.isEmpty()) return res.status(422).json({ errors: errors.mapped() });
+        
         const data = matchedData(req);
-
-        await User.unscoped().update({
-            password: bcrypt.hashSync(data.newPassword, bcrypt.genSaltSync(10)),
-        }, {
-            where: {
-                id: req.user.id,
-            },
-        });
-
+        await passwordService.updatePassword(req.user.id, data.newPassword);
         return res.json({ success: true });
     } catch (error) {
         return next(error);
@@ -203,9 +190,6 @@ app.get('/user/virtual-account', [
     passport.authenticate('jwt', { session: false }),
 ], async (req: express.Request, res: express.Response, next: express.NextFunction) => {
     try {
-        const { VirtualAccountService } = await import('../services/squad/VirtualAccountService');
-        const virtualAccountService = new VirtualAccountService();
-
         const virtualAccount = await virtualAccountService.getVirtualAccountByUserId(req.user.id);
 
         if (!virtualAccount) {
@@ -236,6 +220,41 @@ app.get('/jobs', [
     try {
         const jobs = await jobService.getJobsForUser(req.user.id);
         return res.json({ jobs });
+    } catch (error) {
+        return next(error);
+    }
+});
+
+app.get('/jobs/:id', [
+    passport.authenticate('jwt', { session: false }),
+    param('id').isUUID(),
+], async (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    try {
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) return res.status(422).json({ errors: errors.mapped() });
+
+        const job = await userJobQueryService.getJobById(req.params.id, req.user.id);
+
+        if (!job) {
+            return res.status(404).json({ msg: 'Job not found' });
+        }
+
+        return res.json(job);
+    } catch (error) {
+        return next(error);
+    }
+});
+
+app.get('/jobs/:id/applications', [
+    passport.authenticate('jwt', { session: false }),
+    param('id').isUUID(),
+], async (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    try {
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) return res.status(422).json({ errors: errors.mapped() });
+
+        const applications = await userJobQueryService.getJobApplications(req.params.id, req.user.id);
+        return res.json(applications);
     } catch (error) {
         return next(error);
     }

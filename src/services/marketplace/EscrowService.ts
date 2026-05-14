@@ -14,14 +14,14 @@ export interface CreateEscrowDTO {
 }
 
 export class EscrowService {
-    async createEscrow(data: CreateEscrowDTO): Promise<EscrowEntryModel> {
+    async createEscrow(data: CreateEscrowDTO, t?: Transaction): Promise<EscrowEntryModel> {
         return EscrowEntry.create({
             jobId: data.jobId,
             customerId: data.customerId,
             workerId: data.workerId,
             amount: data.amount,
             status: ESCROW_STATUS.PENDING,
-        });
+        }, { transaction: t });
     }
 
     async getEscrowByJobId(jobId: string): Promise<EscrowEntryModel | null> {
