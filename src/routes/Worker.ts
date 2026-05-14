@@ -2,7 +2,12 @@ import { body, param, validationResult } from 'express-validator';
 import passport from './../providers/Passport';
 import express from 'express';
 import { WorkerProfile } from '../models/WorkerProfile';
+import { WorkerBankAccount } from '../models/WorkerBankAccount';
+import { JobProposal } from '../models/JobProposal';
+import { JobRequest } from '../models/JobRequest';
 import { User } from '../models/User';
+import { QueryTypes } from 'sequelize';
+import { sequelize } from '../providers/db';
 import { WorkerController } from '../controllers/WorkerController';
 import { WorkerJobService } from '../services/marketplace/WorkerJobService';
 import { JobService } from '../services/marketplace/JobService';
@@ -11,6 +16,9 @@ import { EscrowService } from '../services/marketplace/EscrowService';
 import { ReviewService } from '../services/marketplace/ReviewService';
 
 export const app = express.Router();
+
+import { SquadService } from '../services/squad/SquadService';
+const squadService = new SquadService();
 
 // Initialize services with dependency injection
 const workerJobService = new WorkerJobService();
@@ -319,15 +327,164 @@ app.get('/worker/profile/me', [
 ], async (req: express.Request, res: express.Response, next: express.NextFunction) => {
     try {
         const profile = await findOrCreateWorkerProfile(req.user.id);
+
+        // Fetch phone + email from users, rating from reputation_scores in one query
+        const [extra] = await sequelize.query<{
+            phone: string | null;
+            email: string;
+            average_rating: number;
+        }>(
+            `SELECT u.phone, u.email, COALESCE(rs.average_rating, 0) AS average_rating
+             FROM users u
+             LEFT JOIN reputation_scores rs ON rs.user_id = u.id
+             WHERE u.id = $1`,
+            { bind: [req.user.id], type: QueryTypes.SELECT }
+        );
+
         return res.json({
             display_name: profile.displayName,
             photo_url: profile.photoUrl,
             bio: profile.bio,
+            tagline: profile.tagline ?? null,
             skills: profile.skills,
             location: profile.location,
             share_slug: profile.shareSlug,
+            phone: extra?.phone ?? null,
+            email: extra?.email ?? null,
+            average_rating: Number(extra?.average_rating ?? 0),
         });
     } catch (error) {
+        return next(error);
+    }
+});
+
+app.get('/worker/proposals', [
+    passport.authenticate('jwt', { session: false }),
+], async (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    try {
+        const proposals = await sequelize.query<{
+            id: string;
+            job_request_id: string;
+            proposed_amount: number;
+            status: string;
+            created_at: string;
+            title: string;
+            description: string;
+            location: string;
+            budget: number;
+            job_type: string;
+            customer_name: string;
+            job_request_status: string;
+        }>(`
+            SELECT
+                jp.id,
+                jp.job_request_id,
+                jp.proposed_amount,
+                jp.status,
+                jp.created_at,
+                jr.title,
+                jr.description,
+                jr.location,
+                jr.budget,
+                jt.name as job_type,
+                u.full_name as customer_name,
+                jr.status as job_request_status
+            FROM job_proposals jp
+            JOIN job_requests jr ON jp.job_request_id = jr.id
+            JOIN job_types jt ON jr.job_type_id = jt.id
+            JOIN users u ON jr.customer_id = u.id
+            WHERE jp.worker_id = $1
+            ORDER BY jp.created_at DESC
+        `, { bind: [req.user.id], type: QueryTypes.SELECT });
+
+        return res.json({ proposals });
+    } catch (error) {
+        return next(error);
+    }
+});
+
+app.get('/worker/bank-account', [
+    passport.authenticate('jwt', { session: false }),
+], async (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    try {
+        const account = await WorkerBankAccount.findOne({ where: { userId: req.user.id } });
+        return res.json({ bank_account: account ?? null });
+    } catch (error) {
+        return next(error);
+    }
+});
+
+app.post('/worker/bank-account/lookup', [
+    passport.authenticate('jwt', { session: false }),
+    body('bank_code').exists().trim().notEmpty(),
+    body('account_number').exists().trim().isLength({ min: 10, max: 10 }).withMessage('Account number must be 10 digits'),
+], async (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    try {
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) return res.status(422).json({ errors: errors.mapped() });
+
+        const { bank_code, account_number } = req.body;
+        const result = await squadService.lookupAccount({ bank_code, account_number });
+        return res.json({ account_name: result.data?.account_name ?? null });
+    } catch (error: any) {
+        return res.status(400).json({ msg: 'Could not verify account. Check details and try again.' });
+    }
+});
+
+app.post('/worker/bank-account', [
+    passport.authenticate('jwt', { session: false }),
+    body('account_number').exists().trim().isLength({ min: 10, max: 10 }).withMessage('Account number must be 10 digits'),
+    body('bank_code').exists().trim().notEmpty(),
+    body('bank_name').exists().trim().notEmpty(),
+    body('account_name').exists().trim().notEmpty(),
+], async (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    try {
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) return res.status(422).json({ errors: errors.mapped() });
+
+        const { account_number, bank_code, bank_name, account_name } = req.body;
+
+        const [account] = await WorkerBankAccount.upsert({
+            userId: req.user.id,
+            accountNumber: account_number,
+            bankCode: bank_code,
+            bankName: bank_name,
+            accountName: account_name,
+            verified: true,
+        });
+
+        return res.json({ bank_account: account });
+    } catch (error) {
+        return next(error);
+    }
+});
+
+/**
+ * @openapi
+ * /worker/request-advance:
+ *   post:
+ *     description: Request a partial advance from escrow (e.g. to buy materials)
+ *     tags: [Worker]
+ *     security:
+ *       - bearerAuth: []
+ */
+app.post('/worker/request-advance', [
+    passport.authenticate('jwt', { session: false }),
+    body('job_id').exists().isUUID(),
+    body('amount').exists().isFloat({ min: 1 }),
+    body('reason').optional().trim().isLength({ max: 300 }),
+], async (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    try {
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) return res.status(422).json({ errors: errors.mapped() });
+
+        const { job_id, amount, reason } = req.body;
+        const request = await escrowService.requestAdvance(job_id, req.user.id, Number(amount), reason);
+        return res.json({ advance_request: request });
+    } catch (error: any) {
+        if (error.message?.includes('Not assigned') || error.message?.includes('must be in progress') || error.message?.includes('must be funded') || error.message?.includes('exceeds')) {
+            return res.status(400).json({ msg: error.message });
+        }
         return next(error);
     }
 });

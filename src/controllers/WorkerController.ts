@@ -3,6 +3,7 @@ import { WorkerJobService } from '../services/marketplace/WorkerJobService';
 import { JobService } from '../services/marketplace/JobService';
 import { EscrowService } from '../services/marketplace/EscrowService';
 import { ReviewService } from '../services/marketplace/ReviewService';
+import { PayoutService } from '../services/marketplace/PayoutService';
 import { JOB_STATUS, USER_ROLE } from '../constants/statuses';
 import { JobProposal } from '../models/JobProposal';
 
@@ -11,7 +12,8 @@ export class WorkerController {
         private workerJobService: WorkerJobService,
         private jobService: JobService,
         private escrowService: EscrowService,
-        private reviewService: ReviewService
+        private reviewService: ReviewService,
+        private payoutService: PayoutService = new PayoutService()
     ) {}
 
     async subscribe(req: express.Request, res: express.Response, next: express.NextFunction) {
@@ -93,10 +95,14 @@ export class WorkerController {
 
             if (result.released) {
                 await this.jobService.completeJob(job_id);
+                const payout = await this.payoutService.initiateJobPayout(job_id);
                 return res.json({
                     success: true,
-                    msg: 'Both parties confirmed. Job completed and payment released to your account.',
+                    msg: payout.skipped
+                        ? 'Job completed. Offline payment — no transfer needed.'
+                        : 'Both parties confirmed. Payment is being transferred to your bank account.',
                     released: true,
+                    payout_reference: payout.reference,
                 });
             }
 
@@ -109,6 +115,9 @@ export class WorkerController {
             });
         } catch (error: any) {
             if (error.message?.includes('Escrow not found') || error.message?.includes('payment must be confirmed')) {
+                return res.status(400).json({ msg: error.message });
+            }
+            if (error.message?.includes('bank account')) {
                 return res.status(400).json({ msg: error.message });
             }
             return next(error);

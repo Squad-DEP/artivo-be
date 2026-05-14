@@ -37,6 +37,7 @@ interface UserModel extends Model<InferAttributes<UserModel>, InferCreationAttri
     passwordResetKey: CreationOptional<string> | null;
     emailVerificationKey: CreationOptional<string> | null;
     emailVerified: CreationOptional<boolean>;
+    onboarded: CreationOptional<boolean>;
     createdAt: CreationOptional<Date>;
 }
 
@@ -92,6 +93,11 @@ const User = sequelize.define<UserModel>('user', {
         defaultValue: false,
         allowNull: false,
         field: 'email_verified',
+    },
+    onboarded: {
+        type: DataTypes.BOOLEAN,
+        defaultValue: false,
+        allowNull: false,
     },
     createdAt: {
         type: DataTypes.DATE,

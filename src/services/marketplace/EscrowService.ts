@@ -1,7 +1,10 @@
 import sequelize from '../../providers/db';
+import { Transaction } from 'sequelize';
 import { EscrowEntry, EscrowEntryModel } from '../../models/EscrowEntry';
+import { EscrowAdvanceRequest, EscrowAdvanceRequestModel } from '../../models/EscrowAdvanceRequest';
+import { Job } from '../../models/Job';
 import { VirtualAccount } from '../../models/VirtualAccount';
-import { ESCROW_STATUS, USER_ROLE } from '../../constants/statuses';
+import { ADVANCE_REQUEST_STATUS, ESCROW_STATUS, USER_ROLE } from '../../constants/statuses';
 
 export interface CreateEscrowDTO {
     jobId: string;
@@ -49,30 +52,43 @@ export class EscrowService {
 
     /**
      * Check that userId has sufficient balance, then atomically deduct the amount.
-     * Returns false if insufficient funds. Throws on DB error.
+     * Accepts an optional external transaction so callers can compose this into
+     * a larger atomic operation (e.g. hire flow).
+     * Returns { ok: false } if insufficient funds. Throws on DB error.
      */
-    async checkAndDeductBalance(userId: string, amount: number): Promise<{ ok: boolean; balance: number }> {
-        const result = await sequelize.transaction(async (t) => {
+    async checkAndDeductBalance(
+        userId: string,
+        amount: number,
+        externalTx?: Transaction
+    ): Promise<{ ok: boolean; balance: number }> {
+        const run = async (t: Transaction) => {
             const account = await VirtualAccount.findOne({ where: { userId }, transaction: t, lock: true });
-
-            if (!account) {
-                throw new Error('Virtual account not found');
-            }
+            if (!account) throw new Error('Virtual account not found');
 
             const available = Number(account.balance);
-            if (available < amount) {
-                return { ok: false, balance: available };
-            }
+            if (available < amount) return { ok: false, balance: available };
 
-            await VirtualAccount.increment(
-                { balance: -amount },
-                { where: { userId }, transaction: t }
-            );
-
+            await VirtualAccount.increment({ balance: -amount }, { where: { userId }, transaction: t });
             return { ok: true, balance: available - amount };
-        });
+        };
 
-        return result;
+        if (externalTx) return run(externalTx);
+        return sequelize.transaction(run);
+    }
+
+    /**
+     * Create an EscrowEntry already in FUNDED state within a transaction.
+     * Use this during hire so balance deduction and escrow creation are atomic.
+     */
+    async createEscrowFunded(data: CreateEscrowDTO, t: Transaction): Promise<EscrowEntryModel> {
+        return EscrowEntry.create({
+            jobId: data.jobId,
+            customerId: data.customerId,
+            workerId: data.workerId,
+            amount: data.amount,
+            status: ESCROW_STATUS.FUNDED,
+            fundedAt: new Date(),
+        }, { transaction: t });
     }
 
     /**
@@ -99,10 +115,8 @@ export class EscrowService {
 
     /**
      * Record one party's confirmation that the job is done.
-     * When BOTH worker and customer have confirmed, escrow is released and
-     * the worker's balance is credited.
-     *
-     * Returns { released: true } when both have confirmed (caller should update job status).
+     * When BOTH confirm, escrow is atomically released and the worker receives
+     * only the remainder (total escrow minus already-approved advances).
      */
     async confirmCompletion(
         jobId: string,
@@ -132,9 +146,11 @@ export class EscrowService {
         const customerDone = updated.customerConfirmed ?? false;
 
         if (workerDone && customerDone) {
-            await this.releaseEscrow(jobId, updated);
-            // Credit the worker's balance with the escrowed amount
-            await this.creditBalance(updated.workerId, Number(updated.amount));
+            // Mark escrow released — actual payout is handled by PayoutService in the route layer
+            await EscrowEntry.update(
+                { status: ESCROW_STATUS.RELEASED, releasedAt: new Date() },
+                { where: { jobId } }
+            );
             return { workerConfirmed: true, customerConfirmed: true, released: true };
         }
 
@@ -143,7 +159,7 @@ export class EscrowService {
 
     /**
      * Release escrow to the worker.
-     * Called internally by confirmCompletion once both parties confirm.
+     * For internal/admin use. Normal flow goes through confirmCompletion.
      */
     async releaseEscrow(jobId: string, escrow?: EscrowEntryModel | null): Promise<EscrowEntryModel | null> {
         const entry = escrow ?? await this.getEscrowByJobId(jobId);
@@ -185,6 +201,90 @@ export class EscrowService {
         );
 
         return this.getEscrowByJobId(jobId);
+    }
+
+    /**
+     * Worker requests an advance from the escrow (e.g. for materials).
+     * Amount must not exceed total escrow minus already-approved advances.
+     */
+    async requestAdvance(
+        jobId: string,
+        workerId: string,
+        amount: number,
+        reason?: string
+    ): Promise<EscrowAdvanceRequestModel> {
+        const job = await Job.findByPk(jobId);
+        if (!job) throw new Error('Job not found');
+        if (job.workerId !== workerId) throw new Error('Not assigned to this job');
+        if (job.status !== 'in_progress') throw new Error('Job must be in progress to request an advance');
+
+        const escrow = await this.getEscrowByJobId(jobId);
+        if (!escrow || escrow.status !== ESCROW_STATUS.FUNDED) {
+            throw new Error('Escrow must be funded before requesting an advance');
+        }
+
+        // Sum previously approved advances
+        const approved = await EscrowAdvanceRequest.findAll({
+            where: { jobId, status: ADVANCE_REQUEST_STATUS.APPROVED },
+        });
+        const alreadyReleased = approved.reduce((sum, r) => sum + Number(r.amount), 0);
+        const remaining = Number(escrow.amount) - alreadyReleased;
+
+        if (amount > remaining) {
+            throw new Error(`Advance of ₦${amount} exceeds remaining escrow of ₦${remaining}`);
+        }
+
+        return EscrowAdvanceRequest.create({
+            jobId,
+            workerId,
+            customerId: escrow.customerId,
+            amount,
+            reason: reason ?? null,
+            status: ADVANCE_REQUEST_STATUS.PENDING,
+        });
+    }
+
+    async getAdvanceRequests(jobId: string): Promise<EscrowAdvanceRequestModel[]> {
+        return EscrowAdvanceRequest.findAll({
+            where: { jobId },
+            order: [['requestedAt', 'DESC']],
+        });
+    }
+
+    /**
+     * Customer approves an advance request — credits worker balance immediately.
+     */
+    async approveAdvance(requestId: string, customerId: string): Promise<EscrowAdvanceRequestModel> {
+        const request = await EscrowAdvanceRequest.findByPk(requestId);
+        if (!request) throw new Error('Advance request not found');
+        if (request.customerId !== customerId) throw new Error('Not authorised to approve this request');
+        if (request.status !== ADVANCE_REQUEST_STATUS.PENDING) {
+            throw new Error(`Request is already ${request.status}`);
+        }
+
+        await EscrowAdvanceRequest.update(
+            { status: ADVANCE_REQUEST_STATUS.APPROVED, approvedAt: new Date() },
+            { where: { id: requestId } }
+        );
+
+        // Payout is handled by the route layer (PayoutService.initiateAdvancePayout)
+        return (await EscrowAdvanceRequest.findByPk(requestId))!;
+    }
+
+    async rejectAdvance(requestId: string, customerId: string): Promise<EscrowAdvanceRequestModel> {
+        const request = await EscrowAdvanceRequest.findByPk(requestId);
+        if (!request) throw new Error('Advance request not found');
+        if (request.customerId !== customerId) throw new Error('Not authorised to reject this request');
+        if (request.status !== ADVANCE_REQUEST_STATUS.PENDING) {
+            throw new Error(`Request is already ${request.status}`);
+        }
+
+        await EscrowAdvanceRequest.update(
+            { status: ADVANCE_REQUEST_STATUS.REJECTED },
+            { where: { id: requestId } }
+        );
+
+        return (await EscrowAdvanceRequest.findByPk(requestId))!;
     }
 
     async disputeEscrow(jobId: string): Promise<EscrowEntryModel | null> {

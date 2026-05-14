@@ -62,7 +62,7 @@ export class WorkerJobService {
 
     async getAvailableJobsForWorker(workerId: string): Promise<JobRequestForWorker[]> {
         const query = `
-            SELECT 
+            SELECT
                 jr.id,
                 jr.customer_id,
                 u.full_name as customer_name,
@@ -78,11 +78,7 @@ export class WorkerJobService {
             JOIN users u ON jr.customer_id = u.id
             JOIN job_types jt ON jr.job_type_id = jt.id
             WHERE jr.status = 'open'
-            AND jr.job_type_id IN (
-                SELECT job_type_id 
-                FROM job_subscriptions 
-                WHERE worker_id = $1
-            )
+            AND jr.customer_id != $1
             ORDER BY jr.created_at DESC
         `;
 

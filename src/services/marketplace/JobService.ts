@@ -2,6 +2,7 @@ import { Job, JobModel, JobStatus } from '../../models/Job';
 import { JobRequest } from '../../models/JobRequest';
 import { JobRequestService } from './JobRequestService';
 import { sequelize } from '../../providers/db';
+import { Transaction } from 'sequelize';
 import { JOB_STATUS, JOB_REQUEST_STATUS, USER_ROLE } from '../../constants/statuses';
 
 export interface CustomerJobStatsShape {
@@ -17,6 +18,7 @@ export interface CreateJobDTO {
     workerId: string;
     customerId: string;
     amount: number;
+    paymentMethod?: 'online' | 'offline';
 }
 
 export class JobService {
@@ -26,10 +28,8 @@ export class JobService {
         this.jobRequestService = jobRequestService;
     }
 
-    async createJob(data: CreateJobDTO): Promise<JobModel> {
-        const transaction = await sequelize.transaction();
-
-        try {
+    async createJob(data: CreateJobDTO, externalTx?: Transaction): Promise<JobModel> {
+        const run = async (t: Transaction) => {
             let customerId = data.customerId;
             if (!customerId) {
                 const jobRequest = await this.jobRequestService.getJobRequestById(data.jobRequestId);
@@ -43,16 +43,18 @@ export class JobService {
                 customerId,
                 amount: data.amount,
                 status: JOB_STATUS.PENDING,
-            }, { transaction });
+                paymentMethod: data.paymentMethod ?? 'online',
+            }, { transaction: t });
 
-            await this.jobRequestService.updateJobRequestStatus(data.jobRequestId, JOB_REQUEST_STATUS.ASSIGNED);
+            await this.jobRequestService.updateJobRequestStatus(
+                data.jobRequestId, JOB_REQUEST_STATUS.ASSIGNED, t
+            );
 
-            await transaction.commit();
             return job;
-        } catch (error) {
-            await transaction.rollback();
-            throw error;
-        }
+        };
+
+        if (externalTx) return run(externalTx);
+        return sequelize.transaction(run);
     }
 
     async getJobById(id: string): Promise<JobModel | null> {
@@ -73,12 +75,12 @@ export class JobService {
         });
     }
 
-    async updateJobStatus(id: string, status: JobStatus): Promise<void> {
+    async updateJobStatus(id: string, status: JobStatus, t?: Transaction): Promise<void> {
         const updateData: any = { status };
         if (status === JOB_STATUS.COMPLETED) {
             updateData.completedAt = new Date();
         }
-        await Job.update(updateData, { where: { id } });
+        await Job.update(updateData, { where: { id }, ...(t ? { transaction: t } : {}) });
     }
 
     async completeJob(id: string): Promise<void> {
