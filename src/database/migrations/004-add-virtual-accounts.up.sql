@@ -12,6 +12,6 @@ CREATE TABLE IF NOT EXISTS virtual_accounts (
     UNIQUE(user_id)
 );
 
-CREATE INDEX idx_virtual_accounts_user_id ON virtual_accounts(user_id);
-CREATE INDEX idx_virtual_accounts_customer_identifier ON virtual_accounts(customer_identifier);
-CREATE INDEX idx_virtual_accounts_account_number ON virtual_accounts(virtual_account_number);
+CREATE INDEX IF NOT EXISTS idx_virtual_accounts_user_id ON virtual_accounts(user_id);
+CREATE INDEX IF NOT EXISTS idx_virtual_accounts_customer_identifier ON virtual_accounts(customer_identifier);
+CREATE INDEX IF NOT EXISTS idx_virtual_accounts_account_number ON virtual_accounts(virtual_account_number);

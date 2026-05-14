@@ -7,3 +7,7 @@ CREATE TABLE IF NOT EXISTS job_proposals (
   created_at TIMESTAMP NOT NULL DEFAULT NOW(),
   UNIQUE(job_request_id, worker_id)
 );
+
+CREATE INDEX IF NOT EXISTS idx_job_proposals_job_request ON job_proposals(job_request_id);
+CREATE INDEX IF NOT EXISTS idx_job_proposals_worker ON job_proposals(worker_id);
+CREATE INDEX IF NOT EXISTS idx_job_proposals_status ON job_proposals(status);

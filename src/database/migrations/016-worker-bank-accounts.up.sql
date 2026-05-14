@@ -9,3 +9,5 @@ CREATE TABLE IF NOT EXISTS worker_bank_accounts (
     created_at     TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
     updated_at     TIMESTAMPTZ  NOT NULL DEFAULT NOW()
 );
+
+CREATE INDEX IF NOT EXISTS idx_worker_bank_accounts_user ON worker_bank_accounts(user_id);
