@@ -11,6 +11,11 @@ export interface WorkerProfileModel extends Model<InferAttributes<WorkerProfileM
     skills: CreationOptional<string[]>;
     location: CreationOptional<string> | null;
     shareSlug: string;
+    hourlyRate: CreationOptional<number> | null;
+    minimumBudget: CreationOptional<number> | null;
+    languages: CreationOptional<string[]>;
+    availability: CreationOptional<string>;
+    categories: CreationOptional<string[]>;
     createdAt: CreationOptional<Date>;
 }
 
@@ -53,6 +58,31 @@ export const WorkerProfile = sequelize.define<WorkerProfileModel>('worker_profil
         allowNull: false,
         unique: true,
         field: 'share_slug',
+    },
+    hourlyRate: {
+        type: DataTypes.DECIMAL(10, 2),
+        allowNull: true,
+        field: 'hourly_rate',
+    },
+    minimumBudget: {
+        type: DataTypes.DECIMAL(10, 2),
+        allowNull: true,
+        field: 'minimum_budget',
+    },
+    languages: {
+        type: DataTypes.ARRAY(DataTypes.TEXT),
+        allowNull: false,
+        defaultValue: [],
+    },
+    availability: {
+        type: DataTypes.STRING(20),
+        allowNull: false,
+        defaultValue: 'available',
+    },
+    categories: {
+        type: DataTypes.ARRAY(DataTypes.TEXT),
+        allowNull: false,
+        defaultValue: [],
     },
     createdAt: {
         type: DataTypes.DATE,

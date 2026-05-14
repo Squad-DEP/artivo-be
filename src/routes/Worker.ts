@@ -1,11 +1,10 @@
 import { body, param, validationResult } from 'express-validator';
 import passport from './../providers/Passport';
 import express from 'express';
-import { WorkerProfile } from '../models/WorkerProfile';
 import { WorkerBankAccount } from '../models/WorkerBankAccount';
-import { User } from '../models/User';
 import { WorkerController } from '../controllers/WorkerController';
 import { WorkerJobService } from '../services/marketplace/WorkerJobService';
+import { WorkerProfileService } from '../services/marketplace/WorkerProfileService';
 import { JobService } from '../services/marketplace/JobService';
 import { JobRequestService } from '../services/marketplace/JobRequestService';
 import { EscrowService } from '../services/marketplace/EscrowService';
@@ -18,6 +17,7 @@ const squadService = new SquadService();
 
 // Initialize services with dependency injection
 const workerJobService = new WorkerJobService();
+const workerProfileService = new WorkerProfileService();
 const jobRequestService = new JobRequestService();
 const jobService = new JobService(jobRequestService);
 const escrowService = new EscrowService();
@@ -296,44 +296,12 @@ app.get('/jobs/stats/worker', [
     return workerController.getStats(req, res, next);
 });
 
-async function findOrCreateWorkerProfile(userId: string) {
-    const user = await User.unscoped().findOne({ where: { id: userId } });
-    if (!user) throw new Error('User not found');
-
-    const shareSlug = user.fullName
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, '-')
-        .replace(/^-|-$/g, '')
-        + '-' + userId.slice(0, 6);
-
-    const [profile] = await WorkerProfile.findOrCreate({
-        where: { userId },
-        defaults: { userId, displayName: user.fullName, shareSlug, photoUrl: null },
-    });
-
-    return profile;
-}
-
 app.get('/worker/profile/me', [
     passport.authenticate('jwt', { session: false }),
 ], async (req: express.Request, res: express.Response, next: express.NextFunction) => {
     try {
-        const profile = await findOrCreateWorkerProfile(req.user.id);
-
-        const extra = await workerJobService.getWorkerProfileWithStats(req.user.id);
-
-        return res.json({
-            display_name: profile.displayName,
-            photo_url: profile.photoUrl,
-            bio: profile.bio,
-            tagline: profile.tagline ?? null,
-            skills: profile.skills,
-            location: profile.location,
-            share_slug: profile.shareSlug,
-            phone: extra?.phone ?? null,
-            email: extra?.email ?? null,
-            average_rating: Number(extra?.average_rating ?? 0),
-        });
+        const profile = await workerProfileService.getFullProfile(req.user.id);
+        return res.json(profile);
     } catch (error) {
         return next(error);
     }
@@ -446,7 +414,7 @@ app.patch('/worker/profile/photo', [
             return res.status(422).json({ errors: errors.mapped() });
         }
 
-        const profile = await findOrCreateWorkerProfile(req.user.id);
+        const profile = await workerProfileService.findOrCreate(req.user.id);
         await profile.update({ photoUrl: req.body.photo_url });
         return res.json({ photo_url: profile.photoUrl });
     } catch (error) {
