@@ -64,13 +64,24 @@ app.post('/customer/request-job', [
 
 app.post('/customer/hire', [
     passport.authenticate('jwt', { session: false }),
-    body('job_request_id').exists().isUUID(),
-    body('worker_id').exists().isUUID(),
-    body('amount').exists().isFloat({ min: 0 }),
+    // Accept either (job_request_id + worker_id + amount) or proposal_id alone
+    body('proposal_id').optional().isUUID(),
+    body('job_request_id').if(body('proposal_id').not().exists()).exists().isUUID(),
+    body('worker_id').if(body('proposal_id').not().exists()).exists().isUUID(),
+    body('amount').if(body('proposal_id').not().exists()).exists().isFloat({ min: 0 }),
 ], async (req: express.Request, res: express.Response, next: express.NextFunction) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) return res.status(422).json({ errors: errors.mapped() });
     return customerController.hire(req, res, next);
+});
+
+app.get('/customer/job-requests/:id/proposals', [
+    passport.authenticate('jwt', { session: false }),
+    param('id').exists().isUUID(),
+], async (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) return res.status(422).json({ errors: errors.mapped() });
+    return customerController.getJobRequestProposals(req, res, next);
 });
 
 /**

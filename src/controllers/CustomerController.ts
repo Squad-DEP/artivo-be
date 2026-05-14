@@ -7,6 +7,10 @@ import { EscrowService } from '../services/marketplace/EscrowService';
 import { ReviewService } from '../services/marketplace/ReviewService';
 import MatchingService from '../services/matching/MatchingService';
 import { JOB_STATUS, USER_ROLE } from '../constants/statuses';
+import { JobProposal } from '../models/JobProposal';
+import { JobRequest } from '../models/JobRequest';
+import { QueryTypes } from 'sequelize';
+import { sequelize } from '../providers/db';
 
 export class CustomerController {
     constructor(
@@ -85,7 +89,18 @@ export class CustomerController {
 
     async hire(req: express.Request, res: express.Response, next: express.NextFunction) {
         try {
-            const { job_request_id, worker_id, amount } = req.body;
+            let { job_request_id, worker_id, amount, proposal_id } = req.body;
+
+            // If proposal_id provided, resolve job_request_id, worker_id, and amount from the proposal
+            if (proposal_id) {
+                const proposal = await JobProposal.findByPk(proposal_id);
+                if (!proposal) {
+                    return res.status(404).json({ msg: 'Proposal not found' });
+                }
+                job_request_id = proposal.jobRequestId;
+                worker_id = proposal.workerId;
+                amount = Number(proposal.proposedAmount);
+            }
 
             const isOwner = await this.jobRequestService.verifyJobRequestOwnership(
                 job_request_id,
@@ -123,11 +138,69 @@ export class CustomerController {
             await this.escrowService.fundEscrow(job.id);
             await this.jobService.updateJobStatus(job.id, JOB_STATUS.IN_PROGRESS);
 
+            // If hired via proposal, mark accepted proposal and reject all others for this job request
+            if (proposal_id) {
+                await JobProposal.update(
+                    { status: 'accepted' },
+                    { where: { id: proposal_id } }
+                );
+                await JobProposal.update(
+                    { status: 'rejected' },
+                    { where: { jobRequestId: job_request_id, status: 'pending' } }
+                );
+            }
+
             return res.json({ job, escrow });
         } catch (error: any) {
             if (error.message === 'Virtual account not found') {
                 return res.status(404).json({ msg: 'Virtual account not found. Please contact support.' });
             }
+            return next(error);
+        }
+    }
+
+    async getJobRequestProposals(req: express.Request, res: express.Response, next: express.NextFunction) {
+        try {
+            const { id: jobRequestId } = req.params;
+
+            // Verify the job request belongs to this customer
+            const jobRequest = await JobRequest.findOne({
+                where: { id: jobRequestId, customerId: req.user.id },
+            });
+            if (!jobRequest) {
+                return res.status(404).json({ msg: 'Job request not found' });
+            }
+
+            const proposals = await sequelize.query<{
+                id: string;
+                worker_id: string;
+                worker_name: string;
+                photo_url: string | null;
+                proposed_amount: number;
+                status: string;
+                created_at: Date;
+            }>(
+                `SELECT
+                    jp.id,
+                    jp.worker_id,
+                    u.full_name AS worker_name,
+                    wp.photo_url,
+                    jp.proposed_amount,
+                    jp.status,
+                    jp.created_at
+                FROM job_proposals jp
+                JOIN users u ON u.id = jp.worker_id
+                LEFT JOIN worker_profiles wp ON wp.user_id = jp.worker_id
+                WHERE jp.job_request_id = $1
+                ORDER BY jp.created_at ASC`,
+                {
+                    bind: [jobRequestId],
+                    type: QueryTypes.SELECT,
+                }
+            );
+
+            return res.json({ proposals });
+        } catch (error) {
             return next(error);
         }
     }
@@ -228,7 +301,23 @@ export class CustomerController {
 
     async getMyJobRequests(req: express.Request, res: express.Response, next: express.NextFunction) {
         try {
-            const jobRequests = await this.jobRequestService.getJobRequestsByCustomer(req.user.id);
+            const jobRequests = await sequelize.query<{
+                id: string; title: string; description: string; location: string | null;
+                budget: number | null; status: string; job_type_name: string;
+                proposal_count: number; created_at: Date;
+            }>(
+                `SELECT jr.id, jr.title, jr.description, jr.location, jr.budget, jr.status,
+                        jt.name AS job_type_name,
+                        COALESCE(COUNT(jp.id), 0)::int AS proposal_count,
+                        jr.created_at
+                 FROM job_requests jr
+                 JOIN job_types jt ON jr.job_type_id = jt.id
+                 LEFT JOIN job_proposals jp ON jp.job_request_id = jr.id
+                 WHERE jr.customer_id = $1
+                 GROUP BY jr.id, jt.name
+                 ORDER BY jr.created_at DESC`,
+                { bind: [req.user.id], type: QueryTypes.SELECT }
+            );
             return res.json({ job_requests: jobRequests });
         } catch (error) {
             return next(error);

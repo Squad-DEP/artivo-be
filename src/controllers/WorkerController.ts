@@ -4,6 +4,7 @@ import { JobService } from '../services/marketplace/JobService';
 import { EscrowService } from '../services/marketplace/EscrowService';
 import { ReviewService } from '../services/marketplace/ReviewService';
 import { JOB_STATUS, USER_ROLE } from '../constants/statuses';
+import { JobProposal } from '../models/JobProposal';
 
 export class WorkerController {
     constructor(
@@ -55,13 +56,27 @@ export class WorkerController {
     async acceptJob(req: express.Request, res: express.Response, next: express.NextFunction) {
         try {
             const { job_request_id, proposed_amount } = req.body;
-            const job = await this.jobService.createJob({
+
+            // Upsert: update amount if a proposal already exists for this worker+job_request
+            const [proposal] = await JobProposal.upsert({
                 jobRequestId: job_request_id,
                 workerId: req.user.id,
-                customerId: '',
-                amount: proposed_amount,
+                proposedAmount: proposed_amount,
+                status: 'pending',
+            }, {
+                conflictFields: ['job_request_id', 'worker_id'] as any,
+                returning: true,
             });
-            return res.json({ job, msg: 'Job accepted successfully' });
+
+            return res.json({
+                proposal: {
+                    id: proposal.id,
+                    job_request_id: proposal.jobRequestId,
+                    worker_id: proposal.workerId,
+                    proposed_amount: proposal.proposedAmount,
+                    status: proposal.status,
+                },
+            });
         } catch (error) {
             return next(error);
         }
