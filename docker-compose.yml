@@ -1,49 +1,19 @@
 services:
-  express-api:
+  api:
     build: .
-    entrypoint: "nodemon --watch \"src/**\" --ext \"ts,json\" --exec \"ts-node
-      src/index.ts\""
-    container_name: express-api
-    depends_on:
-      express-api-db:
-        condition: service_healthy
+    container_name: artivo-api
+    ports:
+      - "8080:8080"
+    environment:
+      - NODE_ENV=production
+    env_file:
+      - .env
     volumes:
       - ./:/app
-      - ./.vol/tmp:/tmp
-    links:
-      - express-api-db
-    ports:
-      - "8888:80"
-
-  express-api-db:
-    image: mysql:oracle
-    container_name: express-api-db
-    healthcheck:
-      test: [ "CMD-SHELL", "mysqladmin ping -h localhost -u root -prootpass" ]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    ports:
-      - "3306:3306"
-    volumes:
-      - ./.vol/mysql:/var/lib/mysql
-    environment:
-      MYSQL_ROOT_PASSWORD: supersecret
-      MYSQL_DATABASE: $DB_DATABASE
-      MYSQL_USER: $DB_USERNAME
-      MYSQL_PASSWORD: $DB_PASSWORD
-
-  express-api-proxy:
-    image: nginx:alpine
-    container_name: express-api-proxy
-    depends_on:
-      - express-api
-    ports:
-      - "443:443"
-    volumes:
-      - ./ssl.key:/etc/nginx/ssl/key.pem:ro
-      - ./ssl.cert:/etc/nginx/ssl/cert.pem:ro
-      - ./nginx.conf:/etc/nginx/nginx.conf:ro
-    environment:
-      - NGINX_ENVSUBST_OUTPUT_DIR=/etc/nginx
+      - /app/node_modules
     restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"

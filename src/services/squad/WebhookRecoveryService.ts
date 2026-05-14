@@ -3,6 +3,7 @@ import { PaymentService } from '../../services/marketplace/PaymentService';
 import { JobService } from '../../services/marketplace/JobService';
 import { JobRequestService } from '../../services/marketplace/JobRequestService';
 import { SquadWebhookPayload } from './types';
+import { PAYMENT_STATUS } from '../../constants/statuses';
 
 /**
  * Service to recover missed webhook notifications from Squad
@@ -109,7 +110,7 @@ export class WebhookRecoveryService {
             jobId,
             squadTransactionId: payload.transaction_ref,
             amount: parseFloat(payload.principal_amount),
-            status: 'success',
+            status: PAYMENT_STATUS.SUCCESS,
         });
     }
 

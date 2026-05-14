@@ -1,11 +1,18 @@
-FROM node:24
-
-RUN apt update
-RUN apt install -y vim moreutils
-RUN npm install -g nodemon sequelize sequelize-cli mysql2 eslint ts-node 
+FROM node:24-slim
 
 WORKDIR /app
-COPY . /app
+
+COPY package*.json ./
 RUN npm install
 
-ENTRYPOINT [ "ts-node", "src/index.ts" ]
+COPY . .
+COPY docker-entrypoint.sh /usr/local/bin/
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+
+ENV NODE_ENV=production
+ENV PORT=8080
+
+EXPOSE 8080
+
+ENTRYPOINT ["docker-entrypoint.sh"]
+CMD ["npx", "ts-node", "src/index.ts"]

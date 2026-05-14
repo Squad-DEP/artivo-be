@@ -10,6 +10,8 @@ interface VirtualAccountModel extends Model<InferAttributes<VirtualAccountModel>
     virtualAccountName: string;
     bankName: string;
     bankCode: CreationOptional<string> | null;
+    balance: CreationOptional<number>;
+    totalDeposited: CreationOptional<number>;
     createdAt: CreationOptional<Date>;
     updatedAt: CreationOptional<Date>;
 }
@@ -52,6 +54,17 @@ const VirtualAccount = sequelize.define<VirtualAccountModel>('virtual_account', 
         type: DataTypes.STRING(10),
         allowNull: true,
         field: 'bank_code',
+    },
+    balance: {
+        type: DataTypes.DECIMAL(12, 2),
+        allowNull: false,
+        defaultValue: 0,
+    },
+    totalDeposited: {
+        type: DataTypes.DECIMAL(12, 2),
+        allowNull: false,
+        defaultValue: 0,
+        field: 'total_deposited',
     },
     createdAt: {
         type: DataTypes.DATE,

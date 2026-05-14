@@ -1,25 +1,20 @@
 import express from 'express';
 import crypto from 'crypto';
 import { PaymentService } from '../services/marketplace/PaymentService';
+import { EscrowService } from '../services/marketplace/EscrowService';
 import { JobService } from '../services/marketplace/JobService';
 import { JobRequestService } from '../services/marketplace/JobRequestService';
 import { SquadWebhookPayload } from '../services/squad/types';
 
 export const app = express.Router();
 
-// Initialize services
 const jobRequestService = new JobRequestService();
 const jobService = new JobService(jobRequestService);
-const paymentService = new PaymentService(jobService);
+const escrowService = new EscrowService();
+const paymentService = new PaymentService(jobService, escrowService);
 
-/**
- * Verify Squad webhook signature using HMAC SHA512
- * This ensures the webhook actually came from Squad
- */
 function verifySquadWebhook(payload: any, signature: string): boolean {
-    if (!signature) {
-        return false;
-    }
+    if (!signature) return false;
 
     const secret = process.env.SQUAD_SECRET_KEY || '';
     if (!secret) {
@@ -33,7 +28,6 @@ function verifySquadWebhook(payload: any, signature: string): boolean {
             .update(JSON.stringify(payload))
             .digest('hex');
 
-        // Constant-time comparison to prevent timing attacks
         return crypto.timingSafeEqual(
             Buffer.from(hash, 'hex'),
             Buffer.from(signature, 'hex'),
@@ -44,9 +38,6 @@ function verifySquadWebhook(payload: any, signature: string): boolean {
     }
 }
 
-/**
- * Validate webhook payload structure
- */
 function validateWebhookPayload(payload: any): payload is SquadWebhookPayload {
     const required = [
         'transaction_ref',
@@ -66,14 +57,8 @@ function validateWebhookPayload(payload: any): payload is SquadWebhookPayload {
     return true;
 }
 
-/**
- * Extract job ID from webhook remarks
- * Supports formats: "job_id: abc123", "job-id: abc123", "jobid: abc123"
- */
 function extractJobId(remarks: string): string | null {
-    if (!remarks) {
-        return null;
-    }
+    if (!remarks) return null;
 
     const patterns = [
         /job[_-]?id[:\s]+([a-f0-9-]+)/i,
@@ -83,69 +68,62 @@ function extractJobId(remarks: string): string | null {
 
     for (const pattern of patterns) {
         const match = remarks.match(pattern);
-        if (match && match[1]) {
-            return match[1];
-        }
+        if (match && match[1]) return match[1];
     }
 
     return null;
 }
 
-/**
- * Process webhook payload and log payment
- */
 async function processWebhook(payload: SquadWebhookPayload): Promise<void> {
-    // Only process credit transactions (money received)
     if (payload.transaction_indicator !== 'C') {
         console.log(`[Squad Webhook] Ignoring non-credit transaction: ${payload.transaction_ref}`);
         return;
     }
 
-    // Extract job ID from remarks
+    const amount = parseFloat(payload.principal_amount);
     const jobId = extractJobId(payload.remarks);
 
-    if (!jobId) {
-        console.warn('[Squad Webhook] No job ID found in remarks:', {
-            transaction_ref: payload.transaction_ref,
-            remarks: payload.remarks,
+    if (jobId) {
+        // Job payment via Squad SDK — log and fund escrow
+        await paymentService.logPayment({
+            jobId,
+            squadTransactionId: payload.transaction_ref,
+            amount,
+            status: 'success',
+        });
+
+        console.log(`[Squad Webhook] Payment logged and escrow funded: ${payload.transaction_ref} for job ${jobId}`, {
+            amount: payload.principal_amount,
         });
         return;
     }
 
-    // Log payment
-    try {
-        await paymentService.logPayment({
-            jobId,
-            squadTransactionId: payload.transaction_ref,
-            amount: parseFloat(payload.principal_amount),
-            status: 'success',
-        });
+    // No job ID → this is a wallet top-up. Credit the user's balance.
+    const credited = await escrowService.creditBalanceByIdentifier(payload.customer_identifier, amount);
 
-        console.log(`[Squad Webhook] ✅ Payment logged: ${payload.transaction_ref} for job ${jobId}`, {
+    if (credited) {
+        console.log(`[Squad Webhook] Wallet top-up credited: ${payload.transaction_ref}`, {
+            customer_identifier: payload.customer_identifier,
             amount: payload.principal_amount,
-            settled: payload.settled_amount,
-            fee: payload.fee_charged,
         });
-    } catch (error) {
-        console.error(`[Squad Webhook] ❌ Failed to log payment for job ${jobId}:`, error);
-        throw error; // Re-throw to trigger webhook retry from Squad
+    } else {
+        console.warn('[Squad Webhook] Could not credit balance — virtual account not found:', {
+            customer_identifier: payload.customer_identifier,
+            transaction_ref: payload.transaction_ref,
+        });
     }
 }
 
 /**
  * Squad Webhook Handler
- * Receives payment notifications from Squad
- * 
- * Security:
- * - Validates webhook signature (HMAC SHA512)
- * - Validates payload structure
- * - Idempotent: Safe to receive same webhook multiple times
- * 
- * Error Handling:
- * - Returns 401 for invalid signatures (Squad won't retry)
- * - Returns 400 for invalid payloads (Squad won't retry)
- * - Returns 500 for processing errors (Squad will retry)
- * - Returns 200 for successful processing
+ *
+ * Security: HMAC SHA512 signature verification
+ * Idempotent: safe to receive the same webhook multiple times
+ * Error codes:
+ *   401 – invalid signature (Squad won't retry)
+ *   400 – invalid payload  (Squad won't retry)
+ *   500 – processing error (Squad will retry)
+ *   200 – success
  */
 app.post('/squad/webhook', async (req: express.Request, res: express.Response) => {
     const startTime = Date.now();
@@ -154,66 +132,38 @@ app.post('/squad/webhook', async (req: express.Request, res: express.Response) =
         const signature = req.headers['x-squad-signature'] as string;
         const payload: SquadWebhookPayload = req.body;
 
-        console.log('[Squad Webhook] Received webhook:', {
+        console.log('[Squad Webhook] Received:', {
             transaction_ref: payload?.transaction_ref,
             has_signature: !!signature,
             timestamp: new Date().toISOString(),
         });
 
-        // Step 1: Verify webhook signature
         if (!signature) {
             console.warn('[Squad Webhook] Missing signature header');
-            return res.status(401).json({
-                success: false,
-                message: 'Missing webhook signature',
-            });
+            return res.status(401).json({ success: false, message: 'Missing webhook signature' });
         }
 
         if (!verifySquadWebhook(payload, signature)) {
-            console.warn('[Squad Webhook] Invalid signature - possible attack or misconfiguration');
-            return res.status(401).json({
-                success: false,
-                message: 'Invalid webhook signature',
-            });
+            console.warn('[Squad Webhook] Invalid signature');
+            return res.status(401).json({ success: false, message: 'Invalid webhook signature' });
         }
 
-        // Step 2: Validate payload structure
         if (!validateWebhookPayload(payload)) {
             console.warn('[Squad Webhook] Invalid payload structure');
-            return res.status(400).json({
-                success: false,
-                message: 'Invalid webhook payload',
-            });
+            return res.status(400).json({ success: false, message: 'Invalid webhook payload' });
         }
 
-        // Step 3: Process webhook
         await processWebhook(payload);
 
-        // Step 4: Return success
-        const duration = Date.now() - startTime;
-        console.log(`[Squad Webhook] ✅ Processed successfully in ${duration}ms`);
-
-        return res.status(200).json({
-            success: true,
-            message: 'Webhook processed successfully',
-        });
+        console.log(`[Squad Webhook] Processed in ${Date.now() - startTime}ms`);
+        return res.status(200).json({ success: true, message: 'Webhook processed successfully' });
     } catch (error) {
-        const duration = Date.now() - startTime;
-        console.error(`[Squad Webhook] ❌ Processing failed after ${duration}ms:`, error);
-
-        // Return 500 to trigger Squad's retry mechanism
-        return res.status(500).json({
-            success: false,
-            message: 'Webhook processing failed - will retry',
-        });
+        console.error(`[Squad Webhook] Failed after ${Date.now() - startTime}ms:`, error);
+        return res.status(500).json({ success: false, message: 'Webhook processing failed - will retry' });
     }
 });
 
-/**
- * Health check endpoint for Squad webhook
- * Use this to verify webhook URL is accessible
- */
-app.get('/squad/webhook/health', (req: express.Request, res: express.Response) => {
+app.get('/squad/webhook/health', (_req: express.Request, res: express.Response) => {
     res.status(200).json({
         success: true,
         message: 'Squad webhook endpoint is healthy',

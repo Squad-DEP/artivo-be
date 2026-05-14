@@ -205,21 +205,24 @@ app.post('/auth/sign-up', [
     body('password')
         .notEmpty()
         .exists(),
-    body('firstName', 'You must provide your first name')
+    body('firstName')
         .notEmpty()
         .exists(),
     body('lastName')
-        .default('')
-        .optional(),
+        .optional()
+        .default(''),
     body('phone')
         .optional(),
-    body('role')
+    body('dob')
         .optional()
-        .isIn(['worker', 'customer'])
-        .default('customer'),
-    body('tos', 'You must accept the Terms of Service to use this platform')
+        .isDate({ format: 'YYYY-MM-DD' })
+        .withMessage('dob must be a valid date in YYYY-MM-DD format'),
+    body('role')
         .exists()
-        .notEmpty(),
+        .isIn(['worker', 'customer']),
+    body('tos', 'You must accept the Terms of Service to use this platform')
+        .optional()
+        .default(true),
     middleware.isStrongPassword,
     middleware.hCaptcha,
 ], async (req: express.Request, res: express.Response, next: express.NextFunction) => {
@@ -229,14 +232,17 @@ app.post('/auth/sign-up', [
         const data = matchedData(req);
 
         const userID = uuidv4();
-        const fullName = `${ucFirst(data.firstName)} ${data.lastName ? ucFirst(data.lastName) : ''}`.trim();
+        const fullName = data.lastName 
+            ? `${ucFirst(data.firstName)} ${ucFirst(data.lastName)}`.trim()
+            : ucFirst(data.firstName);
 
         const user = await User.create({
             id: userID,
             email: data.email,
             phone: data.phone || null,
+            dob: data.dob || null,
             fullName,
-            role: data.role || 'customer',
+            role: data.role,
             password: bcrypt.hashSync(data.password, bcrypt.genSaltSync(10)),
             emailVerificationKey: String(Math.floor(Math.random() * (999999 - 111111 + 1)) + 111111),
         });

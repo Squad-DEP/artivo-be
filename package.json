@@ -34,6 +34,8 @@
     "exec:test": "docker exec -ti express-api npm run test"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1045.0",
+    "@aws-sdk/s3-request-presigner": "^3.1045.0",
     "@catalystic/json-to-yaml": "^1.0.0",
     "@google/genai": "^2.1.0",
     "@google/generative-ai": "^0.24.1",

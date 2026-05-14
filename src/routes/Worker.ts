@@ -1,10 +1,13 @@
 import { body, param, validationResult } from 'express-validator';
 import passport from './../providers/Passport';
 import express from 'express';
+import { WorkerProfile } from '../models/WorkerProfile';
+import { User } from '../models/User';
 import { WorkerController } from '../controllers/WorkerController';
 import { WorkerJobService } from '../services/marketplace/WorkerJobService';
 import { JobService } from '../services/marketplace/JobService';
 import { JobRequestService } from '../services/marketplace/JobRequestService';
+import { EscrowService } from '../services/marketplace/EscrowService';
 import { ReviewService } from '../services/marketplace/ReviewService';
 
 export const app = express.Router();
@@ -13,10 +16,11 @@ export const app = express.Router();
 const workerJobService = new WorkerJobService();
 const jobRequestService = new JobRequestService();
 const jobService = new JobService(jobRequestService);
+const escrowService = new EscrowService();
 const reviewService = new ReviewService();
 
 // Initialize controller
-const workerController = new WorkerController(workerJobService, jobService, reviewService);
+const workerController = new WorkerController(workerJobService, jobService, escrowService, reviewService);
 
 /**
  * @swagger
@@ -267,4 +271,81 @@ app.get('/worker/jobs/stream', [
     passport.authenticate('jwt', { session: false }),
 ], async (req: express.Request, res: express.Response, next: express.NextFunction) => {
     return workerController.streamJobs(req, res, next);
+});
+
+/**
+ * @openapi
+ * /jobs/stats/worker:
+ *   get:
+ *     description: Get job statistics for the authenticated worker
+ *     tags: [Worker]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Worker job statistics
+ */
+app.get('/jobs/stats/worker', [
+    passport.authenticate('jwt', { session: false }),
+], async (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    try {
+        const stats = await workerJobService.getWorkerStats(req.user.id);
+        return res.json(stats);
+    } catch (error) {
+        return next(error);
+    }
+});
+
+async function findOrCreateWorkerProfile(userId: string) {
+    const user = await User.unscoped().findOne({ where: { id: userId } });
+    if (!user) throw new Error('User not found');
+
+    const shareSlug = user.fullName
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-|-$/g, '')
+        + '-' + userId.slice(0, 6);
+
+    const [profile] = await WorkerProfile.findOrCreate({
+        where: { userId },
+        defaults: { userId, displayName: user.fullName, shareSlug, photoUrl: null },
+    });
+
+    return profile;
+}
+
+app.get('/worker/profile/me', [
+    passport.authenticate('jwt', { session: false }),
+], async (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    try {
+        const profile = await findOrCreateWorkerProfile(req.user.id);
+        return res.json({
+            display_name: profile.displayName,
+            photo_url: profile.photoUrl,
+            bio: profile.bio,
+            skills: profile.skills,
+            location: profile.location,
+            share_slug: profile.shareSlug,
+        });
+    } catch (error) {
+        return next(error);
+    }
+});
+
+app.patch('/worker/profile/photo', [
+    passport.authenticate('jwt', { session: false }),
+    body('photo_url').notEmpty().isURL().withMessage('Valid photo_url is required'),
+], async (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    try {
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) {
+            return res.status(422).json({ errors: errors.mapped() });
+        }
+
+        const profile = await findOrCreateWorkerProfile(req.user.id);
+        await profile.update({ photoUrl: req.body.photo_url });
+        return res.json({ photo_url: profile.photoUrl });
+    } catch (error) {
+        return next(error);
+    }
 });
