@@ -25,7 +25,7 @@ export class GeminiProvider implements IAIProvider {
         this.fileManager = new GoogleAIFileManager(this.apiKey);
     }
 
-    async process(prompt: string, userInput: string, context?: string[], mimeType?: string): Promise<AIResult> {
+    async process(prompt: string, userInput: string, context?: string[]): Promise<AIResult> {
         let tempFilePath: string | null = null;
         try {
             if (!this.apiKey) {
@@ -43,29 +43,19 @@ export class GeminiProvider implements IAIProvider {
 
             if (isAudio) {
                 const buffer = Buffer.from(userInput.replace(/^data:audio\/\w+;base64,/, ''), 'base64');
-                // Normalise the raw MIME type — strip codec params, map audio/mp4 → audio/m4a
-                // (Gemini handles m4a inline more reliably than the generic mp4 container type)
-                const rawMime = (mimeType || 'audio/webm').split(';')[0].trim();
-                const actualMime = rawMime === 'audio/mp4' ? 'audio/m4a' : rawMime;
-                const ext = actualMime.includes('m4a') || actualMime.includes('mp4') ? 'm4a'
-                    : actualMime.includes('ogg') ? 'ogg'
-                    : actualMime.includes('wav') ? 'wav'
-                    : 'webm';
-
-                console.log(`Gemini audio: rawMime=${rawMime} → actualMime=${actualMime}, size=${buffer.length}B`);
 
                 //if audio is > 1mb, use filemanager
                 if (buffer.length > 1024 * 1024) {
-                    tempFilePath = path.join(os.tmpdir(), `artivo_${Date.now()}.${ext}`);
+                    tempFilePath = path.join(os.tmpdir(), `artivo_${Date.now()}.m4a`);
                     await fs.writeFile(tempFilePath, buffer); //non blocking write
                     const upload = await this.fileManager.uploadFile(tempFilePath, {
-                        mimeType: actualMime,
+                        mimeType: 'audio/mp4',
                         displayName: 'ArtisanRecording',
                     });
 
                     parts.push({ fileData: { mimeType: upload.file.mimeType, fileUri: upload.file.uri } });
                 } else {
-                    parts.push({ inlineData: { mimeType: actualMime, data: buffer.toString('base64') } });
+                    parts.push({ inlineData: { mimeType: 'audio/wav', data: buffer.toString('base64') } });
                 }
 
             } else {

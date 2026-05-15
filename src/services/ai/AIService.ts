@@ -22,7 +22,7 @@ class AIService {
         ];
     }
 
-    private async executeWithFallback(prompt: string, userInput: string, context?: string[], mimeType?: string): Promise<AIResult> {
+    private async executeWithFallback(prompt: string, userInput: string, context?: string[]): Promise<AIResult> {
         let lastError = "";
 
         for (let i = 0; i < this.providers.length; i++) {
@@ -31,20 +31,9 @@ class AIService {
 
             console.log(`Attempting request with ${providerName}...`);
 
-            const result = await provider.process(prompt, userInput, context, mimeType);
+            const result = await provider.process(prompt, userInput, context);
 
             if (result.success) {
-                // Guard against silent extraction failure — provider returned success but all fields are null.
-                // This happens when Gemini processes audio in a format it can't hear (e.g. audio/mp4 inline on Safari).
-                // Fall through to the next provider instead of returning empty data.
-                const isAudioInput = userInput.length > 100 && !userInput.includes(' ');
-                const hasExtractedData = result.data && Object.values(result.data).some(
-                    (v) => v !== null && v !== undefined && v !== '' && !(Array.isArray(v) && v.length === 0)
-                );
-                if (isAudioInput && !hasExtractedData && i < this.providers.length - 1) {
-                    console.warn(`${providerName} returned all-null extraction for audio input, trying next provider.`);
-                    continue;
-                }
                 return result;
             }
 
@@ -78,17 +67,17 @@ class AIService {
     /**
      * Process onboarding — voice or text, for artisans and customers
      */
-    async processOnboarding(userInput: string, userType: 'artisan' | 'customer', context?: string[], mimeType?: string): Promise<AIResult> {
+    async processOnboarding(userInput: string, userType: 'artisan' | 'customer', context?: string[]): Promise<AIResult> {
         const prompt = userType === 'artisan' ? ARTISAN_ONBOARDING_PROMPT : CUSTOMER_ONBOARDING_PROMPT;
-        return this.executeWithFallback(prompt, userInput, context, mimeType);
+        return this.executeWithFallback(prompt, userInput, context);
     }
 
     /**
      * Extract structured job details from voice or text input
      */
-    async extractJobDescription(userInput: string, availableJobTypes: Array<{ id: string; name: string }>, mimeType?: string): Promise<AIResult> {
+    async extractJobDescription(userInput: string, availableJobTypes: Array<{ id: string; name: string }>): Promise<AIResult> {
         const prompt = buildJobExtractionPrompt(availableJobTypes);
-        return this.executeWithFallback(prompt, userInput, undefined, mimeType);
+        return this.executeWithFallback(prompt, userInput);
     }
 
     /**

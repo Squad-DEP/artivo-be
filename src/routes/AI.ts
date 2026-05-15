@@ -37,9 +37,7 @@ app.post('/ai/onboard/voice', [
 
         const { userType } = matchedData(req);
         const base64Audio = audioFile.data.toString('base64');
-        const mimeType = (audioFile.mimetype || 'audio/webm').split(';')[0].trim();
-        console.log(`Voice onboard: file=${audioFile.name}, mime=${mimeType}, size=${audioFile.size}B, user=${userType}`);
-        const result = await AIService.processOnboarding(base64Audio, userType, [], mimeType);
+        const result = await AIService.processOnboarding(base64Audio, userType);
 
         if (!result.success) {
             return res.status(500).json({ msg: 'Failed to process audio onboarding', error: result.error });
@@ -129,9 +127,7 @@ app.post('/ai/extract-job/voice', [
 
         const jobTypes = await onboardingService.getJobTypes();
         const base64Audio = audioFile.data.toString('base64');
-        const mimeType = (audioFile.mimetype || 'audio/webm').split(';')[0].trim();
-        console.log(`Voice job extract: file=${audioFile.name}, mime=${mimeType}, size=${audioFile.size}B`);
-        const result = await AIService.extractJobDescription(base64Audio, jobTypes, mimeType);
+        const result = await AIService.extractJobDescription(base64Audio, jobTypes);
 
         if (!result.success) {
             return res.status(500).json({ msg: 'Failed to extract job details from audio', error: result.error });

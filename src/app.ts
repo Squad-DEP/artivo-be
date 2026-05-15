@@ -45,12 +45,8 @@ app.set('trust proxy', 1);   // Required for Railway / reverse proxies
 app.disable('x-powered-by');
 if (!isTest) app.use(requestLogger);
 app.use(helmet());
-// Raise the JSON limit only for the voice endpoint (base64 audio can be ~200KB+)
-// Voice endpoint receives base64 audio in the body — needs a higher limit
-app.use('/api/v1/ai/extract-job/voice', express.json({ limit: '10mb' }));
-// Everything else: keep tight to prevent oversized payload attacks
-app.use(express.json({ limit: '500kb' }));
-app.use(express.urlencoded({ extended: true, limit: '500kb' }));
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(cors({
     origin: '*',
     credentials: true,

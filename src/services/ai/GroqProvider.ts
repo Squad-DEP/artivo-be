@@ -16,7 +16,7 @@ export class GroqProvider implements IAIProvider {
         this.groq = new Groq({ apiKey: this.apiKey });
     }
 
-    async process(prompt: string, userInput: string, context?: string[], mimeType?: string): Promise<AIResult> {
+    async process(prompt: string, userInput: string, context?: string[]): Promise<AIResult> {
         let tempFilePath: string | null = null;
 
         try {
@@ -32,23 +32,13 @@ export class GroqProvider implements IAIProvider {
             if(isAudio) {
                 const buffer = Buffer.from(userInput.replace(/^data:audio\/\w+;base64,/, ''), 'base64');
 
-                // Use the actual mime type to pick the right extension — Whisper uses the filename extension to detect format
-                const ext = mimeType?.includes('mp4') ? 'mp4'
-                    : mimeType?.includes('ogg') ? 'ogg'
-                    : mimeType?.includes('wav') ? 'wav'
-                    : 'webm';
-
-                tempFilePath = path.join(os.tmpdir(), `groq_stt_${Date.now()}.${ext}`);
+                tempFilePath = path.join(os.tmpdir(), `groq_stt_${Date.now()}.wav`);
 
                 await fsPromises.writeFile(tempFilePath, buffer);
 
                 const transcription = await this.groq.audio.transcriptions.create({file: fs.createReadStream(tempFilePath), model: 'whisper-large-v3', response_format: 'json'});
 
                 console.log(`Groq transcription: "${transcription.text?.slice(0, 120)}" (${transcription.text?.length ?? 0} chars)`);
-
-                if (!transcription.text || transcription.text.trim().length < 3) {
-                    throw new Error(`Whisper returned empty transcription for ${ext} audio — the recording may be silent, too short, or in an unsupported codec`);
-                }
 
                 textToProcess = transcription.text;
             }
