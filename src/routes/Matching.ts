@@ -125,7 +125,12 @@ app.get('/jobs/:jobId/matches', [
 
         const matches = await MatchingService.getTopMatches(job, workerProfiles, limit);
 
-        return res.json({ matches });
+        const enriched = matches.map(m => ({
+            ...m,
+            share_slug: workers.find(w => w.user_id === m.worker_id)?.share_slug ?? null,
+        }));
+
+        return res.json({ matches: enriched });
     } catch (error) {
         return next(error);
     }

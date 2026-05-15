@@ -90,6 +90,7 @@ export class JobRequestRepository {
             SELECT jp.id, jp.worker_id,
                    u.full_name AS worker_name,
                    wp.photo_url,
+                   wp.share_slug,
                    jp.proposed_amount, jp.proposed_amount_max,
                    jp.status, jp.created_at
             FROM job_proposals jp

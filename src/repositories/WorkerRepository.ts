@@ -190,6 +190,7 @@ export class WorkerRepository {
     async getWorkersForJobType(jobTypeId: string): Promise<{
         user_id: string;
         display_name: string;
+        share_slug: string | null;
         bio: string;
         skills: string[];
         location: string;
@@ -204,6 +205,7 @@ export class WorkerRepository {
             SELECT
                 wp.user_id,
                 wp.display_name,
+                wp.share_slug,
                 COALESCE(wp.bio, '')      AS bio,
                 COALESCE(wp.skills, '{}') AS skills,
                 COALESCE(wp.location, '') AS location,
