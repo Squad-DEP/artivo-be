@@ -136,6 +136,27 @@ export class SquadService {
         );
     }
 
+    /**
+     * GET /transaction/verify/{transaction_reference}
+     * Verify a checkout (card/inline) transaction by its reference.
+     * Returns the raw Squad response — check .data.transaction_status for "success".
+     */
+    async verifyTransaction(transactionReference: string): Promise<any> {
+        return this.executeWithRetry(
+            async () => {
+                const response = await this.client.get<any>(
+                    `/transaction/verify/${transactionReference}`
+                );
+                if (response.status >= 200 && response.status < 300) {
+                    return response.data;
+                }
+                throw createSquadError(response.status, response.data, 'verify transaction');
+            },
+            'verifyTransaction',
+            false
+        );
+    }
+
     // =========================================================================
     // PAYOUT / TRANSFER
     // =========================================================================

@@ -1,4 +1,4 @@
-import { body, query, param, validationResult } from 'express-validator';
+import { body, query, param, validationResult, matchedData } from 'express-validator';
 import passport from './../providers/Passport';
 import express from 'express';
 import { CustomerController } from '../controllers/CustomerController';
@@ -10,6 +10,9 @@ import { ReviewService } from '../services/marketplace/ReviewService';
 import { PayoutService } from '../services/marketplace/PayoutService';
 import MatchingService from '../services/matching/MatchingService';
 import { HireService } from '../services/marketplace/HireService';
+import { PaymentService } from '../services/marketplace/PaymentService';
+import { SquadService } from '../services/squad/SquadService';
+import { PAYMENT_STATUS } from '../constants/statuses';
 
 export const app = express.Router();
 
@@ -21,6 +24,8 @@ const reviewService = new ReviewService();
 const payoutService = new PayoutService();
 const matchingService = MatchingService;
 const hireService = new HireService(jobService, jobRequestService, escrowService);
+const paymentService = new PaymentService(jobService, escrowService);
+const squadService = new SquadService();
 
 const customerController = new CustomerController(
     workerService,
@@ -210,6 +215,56 @@ app.get('/jobs/stats/customer', [
     try {
         const stats = await jobService.getCustomerStats(req.user.id);
         return res.json(stats);
+    } catch (error) {
+        return next(error);
+    }
+});
+
+/**
+ * POST /customer/verify-payment
+ * Called by the frontend after Squad's onSuccess fires.
+ * 1. If the webhook already processed this transaction, return the existing log.
+ * 2. Otherwise, verify with Squad and log the payment server-side.
+ */
+app.post('/customer/verify-payment', [
+    passport.authenticate('jwt', { session: false }),
+    body('job_id').exists().isUUID().withMessage('job_id is required'),
+    body('transaction_reference').exists().notEmpty().withMessage('transaction_reference is required'),
+], async (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    try {
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) return res.status(422).json({ errors: errors.mapped() });
+
+        const { job_id, transaction_reference } = matchedData(req);
+
+        // 1. Idempotency — webhook may have already processed this
+        const existing = await paymentService.getPaymentLogByTransactionId(transaction_reference);
+        if (existing) {
+            return res.json({ success: true, payment_log: existing });
+        }
+
+        // 2. Verify with Squad
+        const squadResponse = await squadService.verifyTransaction(transaction_reference);
+        const txData = squadResponse?.data;
+
+        if (!txData || txData.transaction_status !== 'success') {
+            return res.status(402).json({
+                success: false,
+                message: 'Transaction not confirmed by Squad',
+                squad_status: txData?.transaction_status ?? 'unknown',
+            });
+        }
+
+        // 3. Log the payment and fund escrow
+        const amountNaira = Number(txData.transaction_amount) / 100; // Squad amounts are in kobo
+        const paymentLog = await paymentService.logPayment({
+            jobId: job_id,
+            squadTransactionId: transaction_reference,
+            amount: amountNaira,
+            status: PAYMENT_STATUS.SUCCESS,
+        });
+
+        return res.json({ success: true, payment_log: paymentLog });
     } catch (error) {
         return next(error);
     }
