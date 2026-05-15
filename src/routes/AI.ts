@@ -37,7 +37,8 @@ app.post('/ai/onboard/voice', [
 
         const { userType } = matchedData(req);
         const base64Audio = audioFile.data.toString('base64');
-        const mimeType = audioFile.mimetype || 'audio/webm';
+        const mimeType = (audioFile.mimetype || 'audio/webm').split(';')[0].trim();
+        console.log(`Voice onboard: file=${audioFile.name}, mime=${mimeType}, size=${audioFile.size}B, user=${userType}`);
         const result = await AIService.processOnboarding(base64Audio, userType, [], mimeType);
 
         if (!result.success) {
@@ -128,7 +129,8 @@ app.post('/ai/extract-job/voice', [
 
         const jobTypes = await onboardingService.getJobTypes();
         const base64Audio = audioFile.data.toString('base64');
-        const mimeType = audioFile.mimetype || 'audio/webm';
+        const mimeType = (audioFile.mimetype || 'audio/webm').split(';')[0].trim();
+        console.log(`Voice job extract: file=${audioFile.name}, mime=${mimeType}, size=${audioFile.size}B`);
         const result = await AIService.extractJobDescription(base64Audio, jobTypes, mimeType);
 
         if (!result.success) {

@@ -33,7 +33,20 @@ class AIService {
 
             const result = await provider.process(prompt, userInput, context, mimeType);
 
-            if (result.success) return result;
+            if (result.success) {
+                // Guard against silent extraction failure — provider returned success but all fields are null.
+                // This happens when Gemini processes audio in a format it can't hear (e.g. audio/mp4 inline on Safari).
+                // Fall through to the next provider instead of returning empty data.
+                const isAudioInput = userInput.length > 100 && !userInput.includes(' ');
+                const hasExtractedData = result.data && Object.values(result.data).some(
+                    (v) => v !== null && v !== undefined && v !== '' && !(Array.isArray(v) && v.length === 0)
+                );
+                if (isAudioInput && !hasExtractedData && i < this.providers.length - 1) {
+                    console.warn(`${providerName} returned all-null extraction for audio input, trying next provider.`);
+                    continue;
+                }
+                return result;
+            }
 
             lastError = result.error || "Unknown error";
             const errorString = lastError.toLowerCase();
