@@ -32,13 +32,17 @@ export class GroqProvider implements IAIProvider {
             if(isAudio) {
                 const buffer = Buffer.from(userInput.replace(/^data:audio\/\w+;base64,/, ''), 'base64');
 
-                tempFilePath = path.join(os.tmpdir(), `groq_stt_${Date.now()}.wav`);
+                tempFilePath = path.join(os.tmpdir(), `groq_stt_${Date.now()}.webm`);
 
                 await fsPromises.writeFile(tempFilePath, buffer);
 
                 const transcription = await this.groq.audio.transcriptions.create({file: fs.createReadStream(tempFilePath), model: 'whisper-large-v3', response_format: 'json'});
 
                 console.log(`Groq transcription: "${transcription.text?.slice(0, 120)}" (${transcription.text?.length ?? 0} chars)`);
+
+                if (!transcription.text || transcription.text.trim().length < 3) {
+                    throw new Error('Whisper returned empty transcription — audio may be silent or too short');
+                }
 
                 textToProcess = transcription.text;
             }

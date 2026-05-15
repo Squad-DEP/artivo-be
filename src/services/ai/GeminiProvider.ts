@@ -55,7 +55,7 @@ export class GeminiProvider implements IAIProvider {
 
                     parts.push({ fileData: { mimeType: upload.file.mimeType, fileUri: upload.file.uri } });
                 } else {
-                    parts.push({ inlineData: { mimeType: 'audio/wav', data: buffer.toString('base64') } });
+                    parts.push({ inlineData: { mimeType: 'audio/webm', data: buffer.toString('base64') } });
                 }
 
             } else {

@@ -26,18 +26,16 @@ const onboardingService = new OnboardingService();
  */
 app.post('/ai/onboard/voice', [
     passport.authenticate('jwt', { session: false }),
+    body('audioData').exists().notEmpty().withMessage('Audio data is required'),
     body('userType').exists().isIn(['artisan', 'customer']).withMessage('User type must be artisan or customer'),
 ], async (req: express.Request, res: express.Response, next: express.NextFunction) => {
     try {
         const errors = validationResult(req);
         if (!errors.isEmpty()) return res.status(422).json({ errors: errors.mapped() });
 
-        const audioFile = req.files?.audio as any;
-        if (!audioFile) return res.status(422).json({ errors: { audio: { msg: 'Audio file is required' } } });
-
-        const { userType } = matchedData(req);
-        const base64Audio = audioFile.data.toString('base64');
-        const result = await AIService.processOnboarding(base64Audio, userType);
+        const { audioData, userType } = matchedData(req);
+        const cleanAudio = onboardingService.sanitizeAudioData(audioData);
+        const result = await AIService.processOnboarding(cleanAudio, userType);
 
         if (!result.success) {
             return res.status(500).json({ msg: 'Failed to process audio onboarding', error: result.error });
@@ -120,14 +118,16 @@ app.post('/ai/chat', [
  */
 app.post('/ai/extract-job/voice', [
     passport.authenticate('jwt', { session: false }),
+    body('audioData').exists().notEmpty().withMessage('Audio data is required'),
 ], async (req: express.Request, res: express.Response, next: express.NextFunction) => {
     try {
-        const audioFile = req.files?.audio as any;
-        if (!audioFile) return res.status(422).json({ errors: { audio: { msg: 'Audio file is required' } } });
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) return res.status(422).json({ errors: errors.mapped() });
 
+        const { audioData } = matchedData(req);
         const jobTypes = await onboardingService.getJobTypes();
-        const base64Audio = audioFile.data.toString('base64');
-        const result = await AIService.extractJobDescription(base64Audio, jobTypes);
+        const cleanAudio = onboardingService.sanitizeAudioData(audioData);
+        const result = await AIService.extractJobDescription(cleanAudio, jobTypes);
 
         if (!result.success) {
             return res.status(500).json({ msg: 'Failed to extract job details from audio', error: result.error });

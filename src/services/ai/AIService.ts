@@ -34,6 +34,15 @@ class AIService {
             const result = await provider.process(prompt, userInput, context);
 
             if (result.success) {
+                // If audio input returned all-null fields, fall through to next provider
+                const isAudioInput = userInput.length > 100 && !userInput.includes(' ');
+                const hasData = result.data && Object.values(result.data).some(
+                    (v) => v !== null && v !== undefined && v !== '' && !(Array.isArray(v) && v.length === 0)
+                );
+                if (isAudioInput && !hasData && i < this.providers.length - 1) {
+                    console.warn(`${providerName} returned all-null for audio — trying next provider`);
+                    continue;
+                }
                 return result;
             }
 
