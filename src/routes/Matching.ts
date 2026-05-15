@@ -1,9 +1,14 @@
 import { param, validationResult, matchedData } from 'express-validator';
 import MatchingService from '../services/matching/MatchingService';
+import { JobRequestRepository } from '../repositories/JobRequestRepository';
+import { WorkerRepository } from '../repositories/WorkerRepository';
 import passport from '../providers/Passport';
 import express from 'express';
 import { sequelize } from '../providers/db';
 import { QueryTypes } from 'sequelize';
+
+const jobRequestRepo = new JobRequestRepository();
+const workerRepo     = new WorkerRepository();
 
 export const app = express.Router();
 
@@ -105,36 +110,20 @@ app.get('/jobs/:jobId/matches', [
         const { jobId } = matchedData(req);
         const limit = parseInt(req.query.limit as string) || 5;
 
-        // TODO: Fetch job from database
-        // TODO: Fetch workers from database
-        // For now, return mock data structure
-        
-        const mockJob = {
-            id: jobId,
-            title: 'Need a plumber for bathroom repair',
-            description: 'Looking for experienced plumber to fix leaking pipes',
-            location: 'Lagos',
-            budget: 50000,
-            job_type: 'Plumbing',
-        };
+        const job = await jobRequestRepo.findByIdWithJobType(jobId);
+        if (!job) return res.status(404).json({ error: 'Job request not found' });
 
-        const mockWorkers = [
-            {
-                user_id: '123',
-                display_name: 'John Doe',
-                bio: 'Experienced plumber with 5 years',
-                skills: ['plumbing', 'pipe fitting'],
-                location: 'Lagos',
-                reputation_score: {
-                    credit_score: 85,
-                    completion_rate: 95,
-                    average_rating: 4.5,
-                    total_jobs: 20,
-                },
-            },
-        ];
+        const workers = await workerRepo.getWorkersForJobType(job.job_type_id);
+        if (workers.length === 0) {
+            return res.json({ matches: [], message: 'No workers subscribed to this job type yet' });
+        }
 
-        const matches = await MatchingService.getTopMatches(mockJob, mockWorkers, limit);
+        const workerProfiles = workers.map(w => ({
+            ...w,
+            reputation_score: w.reputation_score ?? undefined,
+        }));
+
+        const matches = await MatchingService.getTopMatches(job, workerProfiles, limit);
 
         return res.json({ matches });
     } catch (error) {

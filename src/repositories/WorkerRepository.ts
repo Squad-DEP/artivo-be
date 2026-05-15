@@ -182,4 +182,44 @@ export class WorkerRepository {
     async findReputationByUserId(userId: string): Promise<ReputationScoreModel | null> {
         return ReputationScore.findOne({ where: { userId } });
     }
+
+    /**
+     * Fetch all workers subscribed to a given job type, with their profiles
+     * and reputation scores, shaped for the matching engine.
+     */
+    async getWorkersForJobType(jobTypeId: string): Promise<{
+        user_id: string;
+        display_name: string;
+        bio: string;
+        skills: string[];
+        location: string;
+        reputation_score: {
+            credit_score: number;
+            completion_rate: number;
+            average_rating: number;
+            total_jobs: number;
+        } | null;
+    }[]> {
+        return sequelize.query(`
+            SELECT
+                wp.user_id,
+                wp.display_name,
+                COALESCE(wp.bio, '')             AS bio,
+                COALESCE(wp.skills, '[]'::json)  AS skills,
+                COALESCE(wp.location, '')        AS location,
+                CASE WHEN rs.user_id IS NOT NULL THEN
+                    json_build_object(
+                        'credit_score',    COALESCE(rs.credit_score, 0),
+                        'completion_rate', COALESCE(rs.completion_rate, 0),
+                        'average_rating',  COALESCE(rs.average_rating, 0),
+                        'total_jobs',      COALESCE(rs.total_jobs, 0)
+                    )
+                END AS reputation_score
+            FROM job_subscriptions js
+            JOIN worker_profiles wp ON wp.user_id = js.worker_id
+            LEFT JOIN reputation_scores rs ON rs.user_id = js.worker_id
+            WHERE js.job_type_id = $1
+            ORDER BY COALESCE(rs.credit_score, 0) DESC
+        `, { bind: [jobTypeId], type: QueryTypes.SELECT }) as Promise<any[]>;
+    }
 }

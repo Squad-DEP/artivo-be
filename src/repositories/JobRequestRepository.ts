@@ -63,6 +63,28 @@ export class JobRequestRepository {
         `, { bind: [customerId], type: QueryTypes.SELECT }) as Promise<any[]>;
     }
 
+    /**
+     * Fetch a job request with its job type name and id — used by the matching engine.
+     */
+    async findByIdWithJobType(id: string): Promise<{
+        id: string;
+        title: string;
+        description: string;
+        location: string;
+        budget: number;
+        job_type: string;
+        job_type_id: string;
+    } | null> {
+        const [row] = await sequelize.query<any>(`
+            SELECT jr.id, jr.title, jr.description, jr.location, jr.budget,
+                   jt.name AS job_type, jt.id AS job_type_id
+            FROM job_requests jr
+            JOIN job_types jt ON jt.id = jr.job_type_id
+            WHERE jr.id = $1
+        `, { bind: [id], type: QueryTypes.SELECT });
+        return row ?? null;
+    }
+
     async getProposalsForRequest(jobRequestId: string): Promise<any[]> {
         const proposals = await sequelize.query(`
             SELECT jp.id, jp.worker_id,
