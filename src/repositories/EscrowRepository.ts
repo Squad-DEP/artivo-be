@@ -55,6 +55,12 @@ export class EscrowRepository {
         });
     }
 
+    async findByCustomer(customerId: string, statuses?: string[]): Promise<EscrowEntryModel[]> {
+        const where: any = { customerId };
+        if (statuses?.length) where.status = statuses;
+        return EscrowEntry.findAll({ where, order: [['createdAt', 'DESC']] });
+    }
+
     async updateAdvanceRequest(id: string, data: object): Promise<void> {
         await EscrowAdvanceRequest.update(data as any, { where: { id } });
     }

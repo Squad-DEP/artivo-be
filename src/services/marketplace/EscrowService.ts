@@ -303,6 +303,10 @@ export class EscrowService {
         return (await this.escrowRepo.findAdvanceRequestById(requestId))!;
     }
 
+    async getCustomerActiveEscrows(customerId: string): Promise<EscrowEntryModel[]> {
+        return this.escrowRepo.findByCustomer(customerId, [ESCROW_STATUS.FUNDED, ESCROW_STATUS.PENDING]);
+    }
+
     async disputeEscrow(jobId: string): Promise<EscrowEntryModel | null> {
         const escrow = await this.getEscrowByJobId(jobId);
         if (!escrow) return null;

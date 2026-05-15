@@ -8,6 +8,8 @@ import { EscrowService } from '../services/marketplace/EscrowService';
 import { SquadAccountLimitError } from '../services/squad/SquadErrors';
 import { VirtualAccount } from '../models/VirtualAccount';
 import { User } from '../models/User';
+import { Job } from '../models/Job';
+import { JobRequest } from '../models/JobRequest';
 
 export const app = express.Router();
 
@@ -156,8 +158,37 @@ app.get('/account/transactions', [
             return res.status(404).json({ msg: 'Virtual account not found.' });
         }
 
-        const result = await squadService.getCustomerTransactions(account.customerIdentifier);
-        return res.json({ transactions: result.data ?? [] });
+        try {
+            const result = await squadService.getCustomerTransactions(account.customerIdentifier);
+            return res.json({ transactions: result.data ?? [] });
+        } catch {
+            return res.json({ transactions: [] });
+        }
+    } catch (error) {
+        return next(error);
+    }
+});
+
+app.get('/account/escrows', [
+    passport.authenticate('jwt', { session: false }),
+], async (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    try {
+        const escrows = await escrowService.getCustomerActiveEscrows(req.user.id);
+
+        const enriched = await Promise.all(escrows.map(async (e) => {
+            const job = await Job.findByPk(e.jobId);
+            const jobRequest = job ? await JobRequest.findByPk(job.jobRequestId) : null;
+            return {
+                id: e.id,
+                jobId: e.jobId,
+                amount: Number(e.amount),
+                status: e.status,
+                fundedAt: e.fundedAt,
+                title: jobRequest?.title ?? 'Job',
+            };
+        }));
+
+        return res.json({ escrows: enriched });
     } catch (error) {
         return next(error);
     }

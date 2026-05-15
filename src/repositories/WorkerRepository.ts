@@ -204,9 +204,9 @@ export class WorkerRepository {
             SELECT
                 wp.user_id,
                 wp.display_name,
-                COALESCE(wp.bio, '')             AS bio,
-                COALESCE(wp.skills, '[]'::json)  AS skills,
-                COALESCE(wp.location, '')        AS location,
+                COALESCE(wp.bio, '')      AS bio,
+                COALESCE(wp.skills, '{}') AS skills,
+                COALESCE(wp.location, '') AS location,
                 CASE WHEN rs.user_id IS NOT NULL THEN
                     json_build_object(
                         'credit_score',    COALESCE(rs.credit_score, 0),
