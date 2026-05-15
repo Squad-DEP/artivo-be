@@ -12,7 +12,6 @@ import {
     VirtualAccountDetailsResponse,
     AccountLookupResponse,
     TransferResponse,
-    TransactionVerifyResponse,
 } from './types/responses';
 import { TransactionQueryResponse } from './types/transactions';
 import { WebhookErrorLogResponse } from './types/webhooks';
@@ -133,33 +132,6 @@ export class SquadService {
                 throw createSquadError(response.status, response.data, 'get webhook error logs');
             },
             'getWebhookErrorLogs',
-            true
-        );
-    }
-
-    // =========================================================================
-    // PAYMENT (CHECKOUT)
-    // =========================================================================
-
-    /**
-     * GET /transaction/verify/:transaction_ref
-     * Verify the status of a payment by its transaction reference.
-     */
-    async verifyTransaction(transactionRef: string): Promise<TransactionVerifyResponse> {
-        if (!transactionRef) {
-            throw new SquadError('Transaction reference is required', 'VALIDATION_ERROR' as any, 400, false);
-        }
-        return this.executeWithRetry(
-            async () => {
-                const response = await this.client.get<TransactionVerifyResponse>(
-                    `/transaction/verify/${transactionRef}`
-                );
-                if (response.status >= 200 && response.status < 300 && response.data.success) {
-                    return response.data;
-                }
-                throw createSquadError(response.status, response.data, 'verify transaction');
-            },
-            'verifyTransaction',
             true
         );
     }

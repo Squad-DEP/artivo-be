@@ -9,15 +9,6 @@ export interface VirtualAccountData {
     updated_at: string;
 }
 
-export interface InitiatePaymentData {
-    checkout_url: string;
-    merchant_amount: number;
-    transaction_ref: string;
-    email: string;
-    currency: string;
-    amount: number;
-}
-
 export interface AccountLookupData {
     account_name: string;
     account_number: string;
@@ -34,20 +25,6 @@ export interface TransferData {
     bank_code: string;
     account_number: string;
     account_name?: string;
-}
-
-export interface TransactionVerifyData {
-    transaction_ref: string;
-    merchant_ref: string;
-    gateway_ref: string;
-    transaction_status: string; // 'success' | 'failed' | 'pending'
-    email: string;
-    amount: number;             // in kobo
-    currency_id: string;
-    merchant_amount: number;
-    transaction_type: string;
-    transaction_date: string;
-    payment_type?: string;
 }
 
 export interface SquadSuccessResponse<T = any> {
@@ -68,7 +45,5 @@ export type SquadResponse<T = any> = SquadSuccessResponse<T> | SquadErrorRespons
 
 export type VirtualAccountResponse = SquadResponse<VirtualAccountData>;
 export type VirtualAccountDetailsResponse = SquadResponse<VirtualAccountData>;
-export type InitiatePaymentResponse = SquadResponse<InitiatePaymentData>;
 export type AccountLookupResponse = SquadResponse<AccountLookupData>;
 export type TransferResponse = SquadResponse<TransferData>;
-export type TransactionVerifyResponse = SquadResponse<TransactionVerifyData>;

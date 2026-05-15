@@ -5,7 +5,6 @@ import { CustomerController } from '../controllers/CustomerController';
 import { WorkerService } from '../services/marketplace/WorkerService';
 import { JobRequestService } from '../services/marketplace/JobRequestService';
 import { JobService } from '../services/marketplace/JobService';
-import { PaymentService } from '../services/marketplace/PaymentService';
 import { EscrowService } from '../services/marketplace/EscrowService';
 import { ReviewService } from '../services/marketplace/ReviewService';
 import { PayoutService } from '../services/marketplace/PayoutService';
@@ -18,7 +17,6 @@ const workerService = new WorkerService();
 const jobRequestService = new JobRequestService();
 const jobService = new JobService(jobRequestService);
 const escrowService = new EscrowService();
-const paymentService = new PaymentService(jobService, escrowService);
 const reviewService = new ReviewService();
 const payoutService = new PayoutService();
 const matchingService = MatchingService;
@@ -28,7 +26,6 @@ const customerController = new CustomerController(
     workerService,
     jobRequestService,
     jobService,
-    paymentService,
     escrowService,
     reviewService,
     matchingService,
@@ -90,50 +87,6 @@ app.get('/customer/job-requests/:id/proposals', [
     return customerController.getJobRequestProposals(req, res, next);
 });
 
-/**
- * @openapi
- * /customer/verify-payment:
- *   post:
- *     description: >
- *       Verify a Squad transaction server-side and log the payment.
- *       Call this after the customer completes payment on the frontend.
- *       The backend fetches the transaction from Squad, confirms the amount
- *       matches the job, and funds the escrow entry.
- *     tags: [Customer]
- *     security:
- *       - bearerAuth: []
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required:
- *               - job_id
- *               - transaction_reference
- *             properties:
- *               job_id:
- *                 type: string
- *               transaction_reference:
- *                 type: string
- *                 description: The Squad transaction reference returned after payment
- *     responses:
- *       200:
- *         description: Payment verified and logged
- *       400:
- *         description: Verification failed (transaction not found, amount mismatch, etc.)
- *       404:
- *         description: Job not found
- */
-app.post('/customer/verify-payment', [
-    passport.authenticate('jwt', { session: false }),
-    body('job_id').exists().isUUID(),
-    body('transaction_reference').exists().trim().notEmpty(),
-], async (req: express.Request, res: express.Response, next: express.NextFunction) => {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) return res.status(422).json({ errors: errors.mapped() });
-    return customerController.verifyPayment(req, res, next);
-});
 
 app.post('/customer/complete-job/:job_id', [
     passport.authenticate('jwt', { session: false }),
