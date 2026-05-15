@@ -41,6 +41,7 @@ if (!isTest) console.log('*');
 ////////////////////////////////////////////////
 // Express
 const app = express();
+app.set('trust proxy', 1);   // Required for Railway / reverse proxies
 app.disable('x-powered-by');
 if (!isTest) app.use(requestLogger);
 app.use(helmet());
@@ -83,7 +84,6 @@ if (!isTest) app.use(rateLimit({
 
 ////////////////////////////////////////////////
 // HTTP
-
 app.use(v1, Auth);
 app.use(v1, User);
 app.use(v1, AI);
