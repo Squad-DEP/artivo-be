@@ -19,51 +19,41 @@ class AIService {
 
     private async executeWithFallback(prompt: string, userInput: string, context?: string[]): Promise<AIResult> {
         let lastError = "";
-    
-        // Loop through all registered providers (Gemini, then Groq)
+
         for (let i = 0; i < this.providers.length; i++) {
             const provider = this.providers[i];
             const providerName = provider instanceof GeminiProvider ? "Gemini" : "Groq";
-            
+
             console.log(`Attempting request with ${providerName}...`);
-            
+
             const result = await provider.process(prompt, userInput, context);
-    
-            if (result.success) {
-                return result;
-            }
-    
-            // If we reach here, the current provider failed.
+
+            if (result.success) return result;
+
             lastError = result.error || "Unknown error";
-            const errorString = JSON.stringify(lastError).toLowerCase();
-    
-            // Specific check for "Try again later" / "High demand" / "Overloaded"
-            const isOverloaded = 
-                errorString.includes("503") || 
-                errorString.includes("high demand") || 
+            const errorString = lastError.toLowerCase();
+
+            const isRetryable =
+                errorString.includes("503") ||
+                errorString.includes("429") ||
+                errorString.includes("rate") ||
+                errorString.includes("high demand") ||
                 errorString.includes("unavailable") ||
-                errorString.includes("rate_limit"); // Added for Groq safety
-    
-            if (isOverloaded) {
-                console.warn(`${providerName} is overloaded or down. Error: ${lastError}`);
-                
-                // If there's another provider in the array, the loop continues to the next one
-                if (i < this.providers.length - 1) {
-                    console.log(`Switching to next available provider...`);
-                    continue; 
-                }
-            } else {
-                // If it's a fatal error (like a bad prompt or code bug), 
-                // you might want to stop immediately, but for a hackathon, 
-                // it's safer to try the fallback anyway.
+                errorString.includes("overloaded");
+
+            if (isRetryable && i < this.providers.length - 1) {
+                console.warn(`${providerName} rate-limited/overloaded, trying next provider. Error: ${lastError}`);
                 continue;
             }
+
+            // Fatal error (bad key, bad prompt, parse failure) — don't waste quota on fallback
+            console.error(`${providerName} failed with non-retryable error: ${lastError}`);
+            break;
         }
-    
-        // If the loop finishes and nothing worked:
-        return { 
-            success: false, 
-            error: `All AI providers failed. Last error: ${lastError}` 
+
+        return {
+            success: false,
+            error: `All AI providers failed. Last error: ${lastError}`,
         };
     }
     

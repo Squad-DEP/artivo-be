@@ -10,10 +10,10 @@ export class GroqProvider implements IAIProvider {
 
     constructor() {
         this.apiKey = process.env.GROQ_API_KEY || '';
-        if(!this.apiKey) {
-            throw new Error("GROQ_API_KEY not set! Groq AI will not work.")
+        if (!this.apiKey) {
+            console.warn('GROQ_API_KEY not set! Groq AI will not work.');
         }
-        this.groq = new Groq({apiKey: this.apiKey});
+        this.groq = new Groq({ apiKey: this.apiKey });
     }
 
     async process(prompt: string, userInput: string, context?: string[]): Promise<AIResult> {
