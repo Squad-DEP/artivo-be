@@ -1,9 +1,10 @@
 import sequelize from '../../providers/db';
 import { Transaction } from 'sequelize';
-import { EscrowEntry, EscrowEntryModel } from '../../models/EscrowEntry';
-import { EscrowAdvanceRequest, EscrowAdvanceRequestModel } from '../../models/EscrowAdvanceRequest';
-import { Job } from '../../models/Job';
-import { VirtualAccount } from '../../models/VirtualAccount';
+import { EscrowEntryModel } from '../../models/EscrowEntry';
+import { EscrowAdvanceRequestModel } from '../../models/EscrowAdvanceRequest';
+import { EscrowRepository } from '../../repositories/EscrowRepository';
+import { VirtualAccountRepository } from '../../repositories/VirtualAccountRepository';
+import { JobRepository } from '../../repositories/JobRepository';
 import { ADVANCE_REQUEST_STATUS, ESCROW_STATUS, USER_ROLE } from '../../constants/statuses';
 
 export interface CreateEscrowDTO {
@@ -14,18 +15,32 @@ export interface CreateEscrowDTO {
 }
 
 export class EscrowService {
+    private escrowRepo: EscrowRepository;
+    private vaRepo:     VirtualAccountRepository;
+    private jobRepo:    JobRepository;
+
+    constructor(
+        escrowRepo = new EscrowRepository(),
+        vaRepo     = new VirtualAccountRepository(),
+        jobRepo    = new JobRepository(),
+    ) {
+        this.escrowRepo = escrowRepo;
+        this.vaRepo     = vaRepo;
+        this.jobRepo    = jobRepo;
+    }
+
     async createEscrow(data: CreateEscrowDTO, t?: Transaction): Promise<EscrowEntryModel> {
-        return EscrowEntry.create({
-            jobId: data.jobId,
+        return this.escrowRepo.create({
+            jobId:      data.jobId,
             customerId: data.customerId,
-            workerId: data.workerId,
-            amount: data.amount,
-            status: ESCROW_STATUS.PENDING,
-        }, { transaction: t });
+            workerId:   data.workerId,
+            amount:     data.amount,
+            status:     ESCROW_STATUS.PENDING,
+        }, t);
     }
 
     async getEscrowByJobId(jobId: string): Promise<EscrowEntryModel | null> {
-        return EscrowEntry.findOne({ where: { jobId } });
+        return this.escrowRepo.findByJobId(jobId);
     }
 
     /**
@@ -33,20 +48,14 @@ export class EscrowService {
      * Also increments total_deposited for lifetime tracking.
      */
     async creditBalance(userId: string, amount: number): Promise<void> {
-        await VirtualAccount.increment(
-            { balance: amount, totalDeposited: amount },
-            { where: { userId } }
-        );
+        await this.vaRepo.increment(userId, { balance: amount, totalDeposited: amount });
     }
 
     /**
      * Credit by customer_identifier (used in webhook where we have the identifier, not userId).
      */
     async creditBalanceByIdentifier(customerIdentifier: string, amount: number): Promise<boolean> {
-        const [updated] = await VirtualAccount.increment(
-            { balance: amount, totalDeposited: amount },
-            { where: { customerIdentifier } }
-        );
+        const [updated] = await this.vaRepo.incrementByIdentifier(customerIdentifier, { balance: amount, totalDeposited: amount });
         return (updated as any) > 0;
     }
 
@@ -62,13 +71,13 @@ export class EscrowService {
         externalTx?: Transaction
     ): Promise<{ ok: boolean; balance: number }> {
         const run = async (t: Transaction) => {
-            const account = await VirtualAccount.findOne({ where: { userId }, transaction: t, lock: true });
+            const account = await this.vaRepo.findByUserId(userId, t, true);
             if (!account) throw new Error('Virtual account not found');
 
             const available = Number(account.balance);
             if (available < amount) return { ok: false, balance: available };
 
-            await VirtualAccount.increment({ balance: -amount }, { where: { userId }, transaction: t });
+            await this.vaRepo.increment(userId, { balance: -amount });
             return { ok: true, balance: available - amount };
         };
 
@@ -81,14 +90,14 @@ export class EscrowService {
      * Use this during hire so balance deduction and escrow creation are atomic.
      */
     async createEscrowFunded(data: CreateEscrowDTO, t: Transaction): Promise<EscrowEntryModel> {
-        return EscrowEntry.create({
-            jobId: data.jobId,
+        return this.escrowRepo.create({
+            jobId:      data.jobId,
             customerId: data.customerId,
-            workerId: data.workerId,
-            amount: data.amount,
-            status: ESCROW_STATUS.FUNDED,
-            fundedAt: new Date(),
-        }, { transaction: t });
+            workerId:   data.workerId,
+            amount:     data.amount,
+            status:     ESCROW_STATUS.FUNDED,
+            fundedAt:   new Date(),
+        }, t);
     }
 
     /**
@@ -105,11 +114,7 @@ export class EscrowService {
             throw new Error(`Cannot fund escrow in status '${escrow.status}'`);
         }
 
-        await EscrowEntry.update(
-            { status: ESCROW_STATUS.FUNDED, fundedAt: new Date() },
-            { where: { jobId } }
-        );
-
+        await this.escrowRepo.update(jobId, { status: ESCROW_STATUS.FUNDED, fundedAt: new Date() });
         return this.getEscrowByJobId(jobId);
     }
 
@@ -137,20 +142,17 @@ export class EscrowService {
         if (role === USER_ROLE.WORKER) update.workerConfirmed = true;
         if (role === USER_ROLE.CUSTOMER) update.customerConfirmed = true;
 
-        await EscrowEntry.update(update, { where: { jobId } });
+        await this.escrowRepo.update(jobId, update);
 
         const updated = await this.getEscrowByJobId(jobId);
         if (!updated) throw new Error('Escrow disappeared during update');
 
-        const workerDone = updated.workerConfirmed ?? false;
+        const workerDone   = updated.workerConfirmed ?? false;
         const customerDone = updated.customerConfirmed ?? false;
 
         if (workerDone && customerDone) {
             // Mark escrow released — actual payout is handled by PayoutService in the route layer
-            await EscrowEntry.update(
-                { status: ESCROW_STATUS.RELEASED, releasedAt: new Date() },
-                { where: { jobId } }
-            );
+            await this.escrowRepo.update(jobId, { status: ESCROW_STATUS.RELEASED, releasedAt: new Date() });
             return { workerConfirmed: true, customerConfirmed: true, released: true };
         }
 
@@ -184,10 +186,10 @@ export class EscrowService {
             update.customerConfirmed = false;
         }
 
-        await EscrowEntry.update(update, { where: { jobId } });
+        await this.escrowRepo.update(jobId, update);
         const updated = await this.getEscrowByJobId(jobId);
         return {
-            workerConfirmed: updated!.workerConfirmed ?? false,
+            workerConfirmed:  updated!.workerConfirmed ?? false,
             customerConfirmed: updated!.customerConfirmed ?? false,
         };
     }
@@ -206,11 +208,7 @@ export class EscrowService {
             throw new Error(`Cannot release escrow in status '${entry.status}'. Payment must be confirmed first.`);
         }
 
-        await EscrowEntry.update(
-            { status: ESCROW_STATUS.RELEASED, releasedAt: new Date() },
-            { where: { jobId } }
-        );
-
+        await this.escrowRepo.update(jobId, { status: ESCROW_STATUS.RELEASED, releasedAt: new Date() });
         return this.getEscrowByJobId(jobId);
     }
 
@@ -230,11 +228,7 @@ export class EscrowService {
             await this.creditBalance(escrow.customerId, Number(escrow.amount));
         }
 
-        await EscrowEntry.update(
-            { status: ESCROW_STATUS.REFUNDED },
-            { where: { jobId } }
-        );
-
+        await this.escrowRepo.update(jobId, { status: ESCROW_STATUS.REFUNDED });
         return this.getEscrowByJobId(jobId);
     }
 
@@ -248,7 +242,7 @@ export class EscrowService {
         amount: number,
         reason?: string
     ): Promise<EscrowAdvanceRequestModel> {
-        const job = await Job.findByPk(jobId);
+        const job = await this.jobRepo.findById(jobId);
         if (!job) throw new Error('Job not found');
         if (job.workerId !== workerId) throw new Error('Not assigned to this job');
         if (job.status !== 'in_progress') throw new Error('Job must be in progress to request an advance');
@@ -258,10 +252,7 @@ export class EscrowService {
             throw new Error('Escrow must be funded before requesting an advance');
         }
 
-        // Sum previously approved advances
-        const approved = await EscrowAdvanceRequest.findAll({
-            where: { jobId, status: ADVANCE_REQUEST_STATUS.APPROVED },
-        });
+        const approved = await this.escrowRepo.findApprovedAdvances(jobId);
         const alreadyReleased = approved.reduce((sum, r) => sum + Number(r.amount), 0);
         const remaining = Number(escrow.amount) - alreadyReleased;
 
@@ -269,57 +260,47 @@ export class EscrowService {
             throw new Error(`Advance of ₦${amount} exceeds remaining escrow of ₦${remaining}`);
         }
 
-        return EscrowAdvanceRequest.create({
+        return this.escrowRepo.createAdvanceRequest({
             jobId,
             workerId,
             customerId: escrow.customerId,
             amount,
-            reason: reason ?? null,
-            status: ADVANCE_REQUEST_STATUS.PENDING,
+            reason:     reason ?? null,
+            status:     ADVANCE_REQUEST_STATUS.PENDING,
         });
     }
 
     async getAdvanceRequests(jobId: string): Promise<EscrowAdvanceRequestModel[]> {
-        return EscrowAdvanceRequest.findAll({
-            where: { jobId },
-            order: [['requestedAt', 'DESC']],
-        });
+        return this.escrowRepo.findAllAdvances(jobId);
     }
 
     /**
      * Customer approves an advance request — credits worker balance immediately.
      */
     async approveAdvance(requestId: string, customerId: string): Promise<EscrowAdvanceRequestModel> {
-        const request = await EscrowAdvanceRequest.findByPk(requestId);
+        const request = await this.escrowRepo.findAdvanceRequestById(requestId);
         if (!request) throw new Error('Advance request not found');
         if (request.customerId !== customerId) throw new Error('Not authorised to approve this request');
         if (request.status !== ADVANCE_REQUEST_STATUS.PENDING) {
             throw new Error(`Request is already ${request.status}`);
         }
 
-        await EscrowAdvanceRequest.update(
-            { status: ADVANCE_REQUEST_STATUS.APPROVED, approvedAt: new Date() },
-            { where: { id: requestId } }
-        );
+        await this.escrowRepo.updateAdvanceRequest(requestId, { status: ADVANCE_REQUEST_STATUS.APPROVED, approvedAt: new Date() });
 
         // Payout is handled by the route layer (PayoutService.initiateAdvancePayout)
-        return (await EscrowAdvanceRequest.findByPk(requestId))!;
+        return (await this.escrowRepo.findAdvanceRequestById(requestId))!;
     }
 
     async rejectAdvance(requestId: string, customerId: string): Promise<EscrowAdvanceRequestModel> {
-        const request = await EscrowAdvanceRequest.findByPk(requestId);
+        const request = await this.escrowRepo.findAdvanceRequestById(requestId);
         if (!request) throw new Error('Advance request not found');
         if (request.customerId !== customerId) throw new Error('Not authorised to reject this request');
         if (request.status !== ADVANCE_REQUEST_STATUS.PENDING) {
             throw new Error(`Request is already ${request.status}`);
         }
 
-        await EscrowAdvanceRequest.update(
-            { status: ADVANCE_REQUEST_STATUS.REJECTED },
-            { where: { id: requestId } }
-        );
-
-        return (await EscrowAdvanceRequest.findByPk(requestId))!;
+        await this.escrowRepo.updateAdvanceRequest(requestId, { status: ADVANCE_REQUEST_STATUS.REJECTED });
+        return (await this.escrowRepo.findAdvanceRequestById(requestId))!;
     }
 
     async disputeEscrow(jobId: string): Promise<EscrowEntryModel | null> {
@@ -331,11 +312,7 @@ export class EscrowService {
             throw new Error(`Cannot dispute escrow in status '${escrow.status}'`);
         }
 
-        await EscrowEntry.update(
-            { status: ESCROW_STATUS.DISPUTED },
-            { where: { jobId } }
-        );
-
+        await this.escrowRepo.update(jobId, { status: ESCROW_STATUS.DISPUTED });
         return this.getEscrowByJobId(jobId);
     }
 }

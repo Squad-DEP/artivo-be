@@ -1,8 +1,8 @@
-import { Job, JobModel, JobStatus } from '../../models/Job';
-import { JobRequest } from '../../models/JobRequest';
+import { Transaction } from 'sequelize';
+import { JobModel, JobStatus } from '../../models/Job';
 import { JobRequestService } from './JobRequestService';
+import { JobRepository } from '../../repositories/JobRepository';
 import { sequelize } from '../../providers/db';
-import { Transaction, QueryTypes } from 'sequelize';
 import { JOB_STATUS, JOB_REQUEST_STATUS, USER_ROLE } from '../../constants/statuses';
 
 export interface CustomerJobStatsShape {
@@ -23,9 +23,11 @@ export interface CreateJobDTO {
 
 export class JobService {
     private jobRequestService: JobRequestService;
+    private jobRepo: JobRepository;
 
-    constructor(jobRequestService: JobRequestService) {
+    constructor(jobRequestService: JobRequestService, jobRepo = new JobRepository()) {
         this.jobRequestService = jobRequestService;
+        this.jobRepo = jobRepo;
     }
 
     async createJob(data: CreateJobDTO, externalTx?: Transaction): Promise<JobModel> {
@@ -37,14 +39,14 @@ export class JobService {
                 customerId = jobRequest.customerId;
             }
 
-            const job = await Job.create({
-                jobRequestId: data.jobRequestId,
-                workerId: data.workerId,
+            const job = await this.jobRepo.create({
+                jobRequestId:  data.jobRequestId,
+                workerId:      data.workerId,
                 customerId,
-                amount: data.amount,
-                status: JOB_STATUS.PENDING,
+                amount:        data.amount,
+                status:        JOB_STATUS.PENDING,
                 paymentMethod: data.paymentMethod ?? 'online',
-            }, { transaction: t });
+            }, t);
 
             await this.jobRequestService.updateJobRequestStatus(
                 data.jobRequestId, JOB_REQUEST_STATUS.ASSIGNED, t
@@ -58,41 +60,32 @@ export class JobService {
     }
 
     async getJobById(id: string): Promise<JobModel | null> {
-        return Job.findByPk(id);
+        return this.jobRepo.findById(id);
     }
 
     async getJobsByWorker(workerId: string): Promise<JobModel[]> {
-        return Job.findAll({
-            where: { workerId },
-            order: [['createdAt', 'DESC']],
-        });
+        return this.jobRepo.findByWorker(workerId);
     }
 
     async getJobsByCustomer(customerId: string): Promise<JobModel[]> {
-        return Job.findAll({
-            where: { customerId },
-            order: [['createdAt', 'DESC']],
-        });
+        return this.jobRepo.findByCustomer(customerId);
     }
 
     async updateJobStatus(id: string, status: JobStatus, t?: Transaction): Promise<void> {
-        const updateData: any = { status };
+        const data: { completedAt?: Date } = {};
         if (status === JOB_STATUS.COMPLETED) {
-            updateData.completedAt = new Date();
+            data.completedAt = new Date();
         }
-        await Job.update(updateData, { where: { id }, ...(t ? { transaction: t } : {}) });
+        await this.jobRepo.updateStatus(id, status, data, t);
     }
 
     async completeJob(id: string): Promise<void> {
         const transaction = await sequelize.transaction();
 
         try {
-            await Job.update(
-                { status: JOB_STATUS.COMPLETED, completedAt: new Date() },
-                { where: { id }, transaction }
-            );
+            await this.jobRepo.updateStatus(id, JOB_STATUS.COMPLETED as JobStatus, { completedAt: new Date() }, transaction);
 
-            const job = await Job.findByPk(id, { transaction });
+            const job = await this.jobRepo.findById(id);
             if (job) {
                 await this.jobRequestService.updateJobRequestStatus(job.jobRequestId, JOB_REQUEST_STATUS.COMPLETED);
             }
@@ -105,26 +98,22 @@ export class JobService {
     }
 
     async getCustomerStats(customerId: string): Promise<CustomerJobStatsShape> {
-        const jobs = await Job.findAll({ where: { customerId } });
-        const active = jobs.filter(j => j.status === 'in_progress').length;
-        const completed = jobs.filter(j => j.status === 'completed' || j.status === 'paid').length;
-        const totalSpent = jobs.filter(j => j.status === 'paid').reduce((sum, j) => sum + Number(j.amount), 0);
-        const pendingPayments = jobs.filter(j => j.status === 'in_progress').reduce((sum, j) => sum + Number(j.amount), 0);
+        const stats = await this.jobRepo.getCustomerStats(customerId);
 
         return {
-            total_jobs: jobs.length,
-            active_jobs: active,
-            completed_jobs: completed,
-            total_spent: totalSpent,
-            pending_payments: pendingPayments,
+            total_jobs:       Number(stats.total_jobs),
+            active_jobs:      Number(stats.active_jobs),
+            completed_jobs:   Number(stats.completed_jobs),
+            total_spent:      Number(stats.total_spent),
+            pending_payments: Number(stats.pending_payments),
         };
     }
 
     async getJobsForUser(userId: string): Promise<any[]> {
         const [workerJobs, customerJobs, jobRequests] = await Promise.all([
-            Job.findAll({ where: { workerId: userId }, order: [['created_at', 'DESC']], limit: 50 }),
-            Job.findAll({ where: { customerId: userId }, order: [['created_at', 'DESC']], limit: 50 }),
-            JobRequest.findAll({ where: { customerId: userId }, order: [['created_at', 'DESC']], limit: 50 }),
+            this.jobRepo.findByUserId(userId),
+            this.jobRepo.findByCustomerUserId(userId),
+            this.jobRequestService.getJobRequestsByCustomer(userId),
         ]);
 
         const allJobIds = new Set<string>();
@@ -167,11 +156,9 @@ export class JobService {
     }
 
     async verifyJobOwnership(id: string, userId: string, role: 'customer' | 'worker'): Promise<boolean> {
-        const whereClause = role === USER_ROLE.CUSTOMER
-            ? { id, customerId: userId }
-            : { id, workerId: userId };
-
-        const job = await Job.findOne({ where: whereClause });
+        const job = role === USER_ROLE.CUSTOMER
+            ? await this.jobRepo.findByCustomerAndId(id, userId)
+            : await this.jobRepo.findByWorkerAndId(id, userId);
         return job !== null;
     }
 
@@ -181,22 +168,7 @@ export class JobService {
         location: string | null; amount: number; payment_method: string;
         status: string; created_at: Date; worker_confirmed: boolean; customer_confirmed: boolean;
     }[]> {
-        return sequelize.query(`
-            SELECT j.id, j.job_request_id, j.worker_id,
-                   uw.full_name AS worker_name, wp.photo_url AS worker_photo,
-                   jr.title, jr.description, jr.location,
-                   j.amount, j.payment_method, j.status, j.created_at,
-                   COALESCE(e.worker_confirmed, false) AS worker_confirmed,
-                   COALESCE(e.customer_confirmed, false) AS customer_confirmed
-            FROM jobs j
-            JOIN job_requests jr ON jr.id = j.job_request_id
-            JOIN users uw ON uw.id = j.worker_id
-            LEFT JOIN worker_profiles wp ON wp.user_id = j.worker_id
-            LEFT JOIN escrow_entries e ON e.job_id = j.id
-            WHERE j.customer_id = $1
-            AND j.status NOT IN ('pending_payment', 'cancelled')
-            ORDER BY j.created_at DESC
-        `, { bind: [customerId], type: QueryTypes.SELECT }) as Promise<any[]>;
+        return this.jobRepo.getEnrichedByCustomer(customerId);
     }
 
     async getEnrichedJobsByWorker(workerId: string): Promise<{
@@ -205,20 +177,6 @@ export class JobService {
         amount: number; payment_method: string; status: string; created_at: Date;
         worker_confirmed: boolean; customer_confirmed: boolean;
     }[]> {
-        return sequelize.query(`
-            SELECT j.id, j.job_request_id, j.customer_id,
-                   uc.full_name AS customer_name,
-                   jr.title, jr.description, jr.location,
-                   j.amount, j.payment_method, j.status, j.created_at,
-                   COALESCE(e.worker_confirmed, false) AS worker_confirmed,
-                   COALESCE(e.customer_confirmed, false) AS customer_confirmed
-            FROM jobs j
-            JOIN job_requests jr ON jr.id = j.job_request_id
-            JOIN users uc ON uc.id = j.customer_id
-            LEFT JOIN escrow_entries e ON e.job_id = j.id
-            WHERE j.worker_id = $1
-            AND j.status NOT IN ('pending_payment', 'cancelled')
-            ORDER BY j.created_at DESC
-        `, { bind: [workerId], type: QueryTypes.SELECT }) as Promise<any[]>;
+        return this.jobRepo.getEnrichedByWorker(workerId);
     }
 }

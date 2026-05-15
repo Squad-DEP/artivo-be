@@ -1,9 +1,9 @@
 import crypto from 'crypto';
-import { Job } from '../../models/Job';
-import { WorkerBankAccount } from '../../models/WorkerBankAccount';
-import { VirtualAccount } from '../../models/VirtualAccount';
-import { EscrowAdvanceRequest } from '../../models/EscrowAdvanceRequest';
-import { WithdrawalLog } from '../../models/WithdrawalLog';
+import { JobRepository } from '../../repositories/JobRepository';
+import { VirtualAccountRepository } from '../../repositories/VirtualAccountRepository';
+import { WithdrawalLogRepository } from '../../repositories/WithdrawalLogRepository';
+import { WorkerBankAccountRepository } from '../../repositories/WorkerBankAccountRepository';
+import { EscrowRepository } from '../../repositories/EscrowRepository';
 import { ADVANCE_REQUEST_STATUS, WITHDRAWAL_STATUS } from '../../constants/statuses';
 import { SquadService } from '../squad/SquadService';
 import { squadConfig } from '../../config/squad.config';
@@ -13,10 +13,27 @@ export type PayoutMode = 'sandbox_skip' | 'live';
 const isSandbox = () => squadConfig.baseUrl.includes('sandbox');
 
 export class PayoutService {
-    private squadService: SquadService;
+    private squadService:      SquadService;
+    private jobRepo:           JobRepository;
+    private vaRepo:            VirtualAccountRepository;
+    private withdrawalRepo:    WithdrawalLogRepository;
+    private bankAccountRepo:   WorkerBankAccountRepository;
+    private escrowRepo:        EscrowRepository;
 
-    constructor(squadService?: SquadService) {
-        this.squadService = squadService ?? new SquadService();
+    constructor(
+        squadService?:    SquadService,
+        jobRepo           = new JobRepository(),
+        vaRepo            = new VirtualAccountRepository(),
+        withdrawalRepo    = new WithdrawalLogRepository(),
+        bankAccountRepo   = new WorkerBankAccountRepository(),
+        escrowRepo        = new EscrowRepository(),
+    ) {
+        this.squadService    = squadService ?? new SquadService();
+        this.jobRepo         = jobRepo;
+        this.vaRepo          = vaRepo;
+        this.withdrawalRepo  = withdrawalRepo;
+        this.bankAccountRepo = bankAccountRepo;
+        this.escrowRepo      = escrowRepo;
     }
 
     /**
@@ -29,16 +46,14 @@ export class PayoutService {
      * Live: call Squad Transfer API to send from merchant wallet to worker's registered bank.
      */
     async initiateJobPayout(jobId: string): Promise<{ reference: string; amount: number; skipped: boolean }> {
-        const job = await Job.findByPk(jobId);
+        const job = await this.jobRepo.findById(jobId);
         if (!job) throw new Error(`Job ${jobId} not found`);
 
         if (job.paymentMethod === 'offline') {
             return { reference: 'offline', amount: 0, skipped: true };
         }
 
-        const approvedAdvances = await EscrowAdvanceRequest.findAll({
-            where: { jobId, status: ADVANCE_REQUEST_STATUS.APPROVED },
-        });
+        const approvedAdvances = await this.escrowRepo.findApprovedAdvances(jobId);
         const alreadyPaid = approvedAdvances.reduce((s, r) => s + Number(r.amount), 0);
         const remainder = Number(job.amount) - alreadyPaid;
 
@@ -67,22 +82,10 @@ export class PayoutService {
 
         // findOrCreate ensures a worker who hasn't yet claimed a virtual account
         // still gets a ledger entry so balance.increment never silently no-ops.
-        const shortId = workerId.replace(/-/g, '').slice(0, 8).toUpperCase();
-        const [va] = await VirtualAccount.findOrCreate({
-            where: { userId: workerId },
-            defaults: {
-                userId:               workerId,
-                customerIdentifier:   `WORKER_${shortId}`,
-                virtualAccountNumber: 'SANDBOX',
-                virtualAccountName:   'Sandbox Worker Account',
-                bankName:             'Artivo Sandbox',
-                balance:              0,
-                totalDeposited:       0,
-            },
-        });
+        const [va] = await this.vaRepo.findOrCreateForWorker(workerId);
         await va.increment({ balance: amount });
 
-        await WithdrawalLog.create({
+        await this.withdrawalRepo.create({
             userId:                    workerId,
             squadTransactionReference: reference,
             amount,
@@ -93,7 +96,7 @@ export class PayoutService {
             remarks:                   `[Sandbox] job payout — job ${jobId}`,
         });
 
-        await Job.update({ payoutReference: reference }, { where: { id: jobId } });
+        await this.jobRepo.updatePayoutReference(jobId, reference);
 
         console.log(`[PayoutService] Sandbox payout of ₦${amount} for job ${jobId} → credited worker ${workerId} virtual account`);
 
@@ -108,14 +111,14 @@ export class PayoutService {
         workerId: string,
         amount: number
     ): Promise<{ reference: string; amount: number; skipped: boolean }> {
-        const bankAccount = await WorkerBankAccount.findOne({ where: { userId: workerId } });
+        const bankAccount = await this.bankAccountRepo.findByUserId(workerId);
         if (!bankAccount) {
             throw new Error('Worker has not registered a bank account. Cannot initiate payout.');
         }
 
         const reference = this.buildReference(workerId, jobId);
 
-        const log = await WithdrawalLog.create({
+        const log = await this.withdrawalRepo.create({
             userId: workerId,
             squadTransactionReference: reference,
             amount,
@@ -144,11 +147,8 @@ export class PayoutService {
                                   transferData?.response_description !== 'Failed' &&
                                   transferData?.response_description !== 'failed';
 
-            await WithdrawalLog.update(
-                { status: transferOk ? WITHDRAWAL_STATUS.SUCCESS : WITHDRAWAL_STATUS.FAILED },
-                { where: { id: log.id } },
-            );
-            await Job.update({ payoutReference: reference }, { where: { id: jobId } });
+            await this.withdrawalRepo.updateStatus(log.id, transferOk ? WITHDRAWAL_STATUS.SUCCESS : WITHDRAWAL_STATUS.FAILED);
+            await this.jobRepo.updatePayoutReference(jobId, reference);
 
             console.log(`[PayoutService] Live payout ${transferOk ? 'succeeded' : 'failed'} for job ${jobId}`, {
                 reference,
@@ -164,7 +164,7 @@ export class PayoutService {
                 // Squad timed out on their end, but the transfer may still go through.
                 // Leave the withdrawal log as 'pending' so a requery job can resolve it later.
                 console.warn(`[PayoutService] Squad 424 timeout for job ${jobId} — leaving as pending for requery`);
-                await Job.update({ payoutReference: reference }, { where: { id: jobId } });
+                await this.jobRepo.updatePayoutReference(jobId, reference);
                 return { reference, amount, skipped: false };
             }
 
@@ -172,19 +172,19 @@ export class PayoutService {
                 // Our reference didn't match Squad's expected format (MERCHANTID_REF).
                 // This shouldn't happen unless buildReference changes — log and fail hard.
                 console.error(`[PayoutService] Bad reference format for job ${jobId}:`, err.message);
-                await WithdrawalLog.update({ status: WITHDRAWAL_STATUS.FAILED }, { where: { id: log.id } });
+                await this.withdrawalRepo.updateStatus(log.id, WITHDRAWAL_STATUS.FAILED);
                 throw new Error('Payout reference format rejected by Squad. Contact engineering.');
             }
 
             if (httpStatus === 401 || httpStatus === 403) {
                 // Wrong or expired API key. Nothing we can do at runtime.
                 console.error(`[PayoutService] Squad auth failure (${httpStatus}) for job ${jobId}`);
-                await WithdrawalLog.update({ status: WITHDRAWAL_STATUS.FAILED }, { where: { id: log.id } });
+                await this.withdrawalRepo.updateStatus(log.id, WITHDRAWAL_STATUS.FAILED);
                 throw new Error('Squad authentication failed. Check SQUAD_SECRET_KEY configuration.');
             }
 
             console.error(`[PayoutService] Squad payout failed for job ${jobId}:`, err.message);
-            await WithdrawalLog.update({ status: WITHDRAWAL_STATUS.FAILED }, { where: { id: log.id } });
+            await this.withdrawalRepo.updateStatus(log.id, WITHDRAWAL_STATUS.FAILED);
             throw new Error(`Payout failed: ${err.message}`);
         }
     }
@@ -201,21 +201,9 @@ export class PayoutService {
         const reference = this.buildReference(workerId, `adv-${requestId.slice(0, 8)}`);
 
         if (isSandbox()) {
-            const shortId = workerId.replace(/-/g, '').slice(0, 8).toUpperCase();
-            const [va] = await VirtualAccount.findOrCreate({
-                where: { userId: workerId },
-                defaults: {
-                    userId:               workerId,
-                    customerIdentifier:   `WORKER_${shortId}`,
-                    virtualAccountNumber: 'SANDBOX',
-                    virtualAccountName:   'Sandbox Worker Account',
-                    bankName:             'Artivo Sandbox',
-                    balance:              0,
-                    totalDeposited:       0,
-                },
-            });
+            const [va] = await this.vaRepo.findOrCreateForWorker(workerId);
             await va.increment({ balance: amount });
-            await WithdrawalLog.create({
+            await this.withdrawalRepo.create({
                 userId:                    workerId,
                 squadTransactionReference: reference,
                 amount,
@@ -228,12 +216,12 @@ export class PayoutService {
             return { reference };
         }
 
-        const bankAccount = await WorkerBankAccount.findOne({ where: { userId: workerId } });
+        const bankAccount = await this.bankAccountRepo.findByUserId(workerId);
         if (!bankAccount) {
             throw new Error('Worker has not registered a bank account. Cannot release advance.');
         }
 
-        const log = await WithdrawalLog.create({
+        const log = await this.withdrawalRepo.create({
             userId: workerId,
             squadTransactionReference: reference,
             amount,
@@ -255,19 +243,16 @@ export class PayoutService {
                 remark:                'Artivo advance payment',
             });
             const ok = response.success && (response.data as any)?.response_description !== 'Failed';
-            await WithdrawalLog.update(
-                { status: ok ? WITHDRAWAL_STATUS.SUCCESS : WITHDRAWAL_STATUS.FAILED },
-                { where: { id: log.id } },
-            );
+            await this.withdrawalRepo.updateStatus(log.id, ok ? WITHDRAWAL_STATUS.SUCCESS : WITHDRAWAL_STATUS.FAILED);
         } catch (err: any) {
             const status = err?.statusCode ?? err?.status;
             if (status === 424) {
                 // Timeout — leave as pending for requery
             } else if (status === 401 || status === 403) {
-                await WithdrawalLog.update({ status: WITHDRAWAL_STATUS.FAILED }, { where: { id: log.id } });
+                await this.withdrawalRepo.updateStatus(log.id, WITHDRAWAL_STATUS.FAILED);
                 throw new Error('Squad authentication failed. Check SQUAD_SECRET_KEY configuration.');
             } else {
-                await WithdrawalLog.update({ status: WITHDRAWAL_STATUS.FAILED }, { where: { id: log.id } });
+                await this.withdrawalRepo.updateStatus(log.id, WITHDRAWAL_STATUS.FAILED);
                 throw new Error(`Advance payout failed: ${err.message}`);
             }
         }

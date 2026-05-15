@@ -1,4 +1,5 @@
-import { PaymentLog, PaymentLogModel } from '../../models/PaymentLog';
+import { PaymentLogModel } from '../../models/PaymentLog';
+import { PaymentLogRepository } from '../../repositories/PaymentLogRepository';
 import { JobService } from './JobService';
 import { EscrowService } from './EscrowService';
 import { JOB_STATUS, PAYMENT_STATUS } from '../../constants/statuses';
@@ -13,10 +14,12 @@ export interface CreatePaymentLogDTO {
 export class PaymentService {
     private jobService: JobService;
     private escrowService: EscrowService;
+    private paymentLogRepo: PaymentLogRepository;
 
-    constructor(jobService: JobService, escrowService?: EscrowService) {
-        this.jobService    = jobService;
-        this.escrowService = escrowService ?? new EscrowService();
+    constructor(jobService: JobService, escrowService?: EscrowService, paymentLogRepo = new PaymentLogRepository()) {
+        this.jobService      = jobService;
+        this.escrowService   = escrowService ?? new EscrowService();
+        this.paymentLogRepo  = paymentLogRepo;
     }
 
     /**
@@ -30,7 +33,7 @@ export class PaymentService {
         const existing = await this.getPaymentLogByTransactionId(data.squadTransactionId);
         if (existing) return existing;
 
-        const paymentLog = await PaymentLog.create({
+        const paymentLog = await this.paymentLogRepo.create({
             jobId:              data.jobId,
             squadTransactionId: data.squadTransactionId,
             amount:             data.amount,
@@ -50,10 +53,10 @@ export class PaymentService {
     }
 
     async getPaymentLogsByJob(jobId: string): Promise<PaymentLogModel[]> {
-        return PaymentLog.findAll({ where: { jobId }, order: [['createdAt', 'DESC']] });
+        return this.paymentLogRepo.findByJobId(jobId);
     }
 
     async getPaymentLogByTransactionId(squadTransactionId: string): Promise<PaymentLogModel | null> {
-        return PaymentLog.findOne({ where: { squadTransactionId } });
+        return this.paymentLogRepo.findByTransactionId(squadTransactionId);
     }
 }

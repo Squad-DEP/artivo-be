@@ -2,7 +2,7 @@ import { PaymentService }       from '../marketplace/PaymentService';
 import { EscrowService }        from '../marketplace/EscrowService';
 import { JobService }           from '../marketplace/JobService';
 import { JobRequestService }    from '../marketplace/JobRequestService';
-import { ProcessedWebhook }     from '../../models/ProcessedWebhook';
+import { ProcessedWebhookRepository } from '../../repositories/ProcessedWebhookRepository';
 import { SquadWebhookPayload }  from './types/webhooks';
 import { PAYMENT_STATUS }       from '../../constants/statuses';
 
@@ -22,21 +22,23 @@ export interface WebhookProcessResult {
  * subsequent call for the same ref returns early without side effects.
  */
 export class WebhookService {
-    private paymentService: PaymentService;
-    private escrowService:  EscrowService;
+    private paymentService:  PaymentService;
+    private escrowService:   EscrowService;
+    private processedWebhookRepo: ProcessedWebhookRepository;
 
-    constructor(paymentService?: PaymentService, escrowService?: EscrowService) {
-        const jobRequestService = new JobRequestService();
-        const jobService        = new JobService(jobRequestService);
-        this.escrowService      = escrowService  ?? new EscrowService();
-        this.paymentService     = paymentService ?? new PaymentService(jobService, this.escrowService);
+    constructor(paymentService?: PaymentService, escrowService?: EscrowService, processedWebhookRepo = new ProcessedWebhookRepository()) {
+        const jobRequestService      = new JobRequestService();
+        const jobService             = new JobService(jobRequestService);
+        this.escrowService           = escrowService  ?? new EscrowService();
+        this.paymentService          = paymentService ?? new PaymentService(jobService, this.escrowService);
+        this.processedWebhookRepo    = processedWebhookRepo;
     }
 
     async process(payload: SquadWebhookPayload): Promise<WebhookProcessResult> {
         const ref = payload.transaction_ref;
 
         // Idempotency: bail out early if we've already handled this transaction.
-        const alreadySeen = await ProcessedWebhook.findByPk(ref);
+        const alreadySeen = await this.processedWebhookRepo.findByRef(ref);
         if (alreadySeen) {
             console.log(`[WebhookService] Already processed — skipping: ${ref}`);
             return { alreadyProcessed: true, action: 'duplicate', transactionRef: ref };
@@ -82,7 +84,7 @@ export class WebhookService {
     }
 
     private async markProcessed(transactionRef: string): Promise<void> {
-        await ProcessedWebhook.findOrCreate({ where: { transactionRef } });
+        await this.processedWebhookRepo.markProcessed(transactionRef);
     }
 
     private extractJobId(remarks: string): string | null {
