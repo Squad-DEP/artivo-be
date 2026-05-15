@@ -2,7 +2,6 @@ import express from 'express';
 import { WorkerService, WorkerFeedFilters } from '../services/marketplace/WorkerService';
 import { JobRequestService } from '../services/marketplace/JobRequestService';
 import { JobService } from '../services/marketplace/JobService';
-import { PaymentService } from '../services/marketplace/PaymentService';
 import { EscrowService } from '../services/marketplace/EscrowService';
 import { ReviewService } from '../services/marketplace/ReviewService';
 import { PayoutService } from '../services/marketplace/PayoutService';
@@ -15,7 +14,6 @@ export class CustomerController {
         private workerService: WorkerService,
         private jobRequestService: JobRequestService,
         private jobService: JobService,
-        private paymentService: PaymentService,
         private escrowService: EscrowService,
         private reviewService: ReviewService,
         private matchingService: typeof MatchingService,
@@ -143,34 +141,6 @@ export class CustomerController {
         }
     }
 
-    async verifyPayment(req: express.Request, res: express.Response, next: express.NextFunction) {
-        try {
-            const { job_id, transaction_reference } = req.body;
-
-            const job = await this.jobService.getJobById(job_id);
-            if (!job || job.customerId !== req.user.id) {
-                return res.status(404).json({ msg: 'Job not found' });
-            }
-
-            const paymentLog = await this.paymentService.verifyAndLogPayment({
-                jobId: job_id,
-                squadTransactionReference: transaction_reference,
-                expectedAmountNgn: Number(job.amount),
-            });
-
-            return res.json({ payment_log: paymentLog, msg: 'Payment verified and logged successfully' });
-        } catch (error: any) {
-            if (
-                error.message?.includes('not found') ||
-                error.message?.includes('mismatch') ||
-                error.message?.includes('Verification failed') ||
-                error.message?.includes('not a credit')
-            ) {
-                return res.status(400).json({ msg: error.message });
-            }
-            return next(error);
-        }
-    }
 
     async completeJob(req: express.Request, res: express.Response, next: express.NextFunction) {
         try {

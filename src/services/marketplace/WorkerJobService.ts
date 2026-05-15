@@ -1,5 +1,4 @@
 import { JobSubscription, JobSubscriptionModel } from '../../models/JobSubscription';
-import { Job } from '../../models/Job';
 import { ReputationScore } from '../../models/ReputationScore';
 import { sequelize } from '../../providers/db';
 import { QueryTypes } from 'sequelize';
@@ -100,25 +99,39 @@ export class WorkerJobService {
     }
 
     async getWorkerStats(workerId: string): Promise<WorkerJobStatsShape> {
-        const jobs = await Job.findAll({ where: { workerId } });
-        const active = jobs.filter(j => j.status === 'in_progress').length;
-        const completed = jobs.filter(j => j.status === 'completed' || j.status === 'paid').length;
-        // Count completed + paid as earned (payout fires on completion)
-        const totalEarned = jobs
-            .filter(j => j.status === 'completed' || j.status === 'paid')
-            .reduce((sum, j) => sum + Number(j.amount), 0);
-        const pendingEarnings = jobs.filter(j => j.status === 'in_progress').reduce((sum, j) => sum + Number(j.amount), 0);
+        // Use SQL so total_earned and completed_jobs only count jobs where
+        // both parties confirmed (escrow released), matching getWorkerEarnings.
+        const [stats] = await sequelize.query<{
+            total_jobs: string;
+            active_jobs: string;
+            completed_jobs: string;
+            total_earned: string;
+            pending_earnings: string;
+        }>(`
+            SELECT
+                COUNT(DISTINCT j.id)::int                                                               AS total_jobs,
+                COUNT(DISTINCT CASE WHEN j.status = 'in_progress' THEN j.id END)::int                  AS active_jobs,
+                COUNT(DISTINCT CASE WHEN j.status IN ('completed','paid') AND ee.id IS NOT NULL
+                                    THEN j.id END)::int                                                 AS completed_jobs,
+                COALESCE(SUM(CASE WHEN j.status IN ('completed','paid') AND ee.id IS NOT NULL
+                                  AND j.payment_method != 'offline'
+                                  THEN j.amount ELSE 0 END), 0)                                        AS total_earned,
+                COALESCE(SUM(CASE WHEN j.status = 'in_progress' THEN j.amount ELSE 0 END), 0)          AS pending_earnings
+            FROM jobs j
+            LEFT JOIN escrow_entries ee ON ee.job_id = j.id AND ee.status = 'released'
+            WHERE j.worker_id = $1
+        `, { bind: [workerId], type: QueryTypes.SELECT });
 
         const rep = await ReputationScore.findOne({ where: { userId: workerId } });
 
         return {
-            total_jobs: jobs.length,
-            active_jobs: active,
-            completed_jobs: completed,
-            total_earned: totalEarned,
-            pending_earnings: pendingEarnings,
-            completion_rate: Number(rep?.completionRate ?? 0),
-            average_rating: Number(rep?.averageRating ?? 0),
+            total_jobs:       Number(stats.total_jobs),
+            active_jobs:      Number(stats.active_jobs),
+            completed_jobs:   Number(stats.completed_jobs),
+            total_earned:     Number(stats.total_earned),
+            pending_earnings: Number(stats.pending_earnings),
+            completion_rate:  Number(rep?.completionRate ?? 0),
+            average_rating:   Number(rep?.averageRating ?? 0),
         };
     }
 
