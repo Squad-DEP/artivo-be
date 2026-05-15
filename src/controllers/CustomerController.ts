@@ -30,29 +30,45 @@ export class CustomerController {
                 limit: req.query.limit ? parseInt(req.query.limit as string) : 20,
             };
 
-            let workers = await this.workerService.getWorkerFeed(filters);
+            // When there's a text query, skip the ILIKE pre-filter so AI can rank
+            // workers by semantic relevance (not just keyword match in bio/name).
+            const feedFilters = filters.query
+                ? { ...filters, query: undefined }
+                : filters;
 
-            if (filters.jobTypeId && workers.length > 0) {
+            let workers = await this.workerService.getWorkerFeed(feedFilters);
+
+            const shouldRank = (filters.jobTypeId || filters.query) && workers.length > 0;
+
+            if (shouldRank) {
                 const jobRequest = {
-                    job_type_id: filters.jobTypeId,
+                    id: 'search',
+                    title: filters.query || filters.jobTypeId || '',
+                    description: filters.query || '',
+                    job_type: filters.jobTypeId || '',
                     location: filters.location || '',
-                    skills_required: [],
+                    budget: 0,
                 };
 
                 const workerProfiles = workers.map(w => ({
                     user_id: w.id,
                     display_name: w.display_name,
+                    bio: w.bio || '',
                     skills: w.skills || [],
                     location: w.location || '',
-                    reputation_score: w.credit_score || 0,
-                    completion_rate: w.completion_rate || 0,
-                    average_rating: w.average_rating || 0,
+                    reputation_score: {
+                        credit_score: w.credit_score || 0,
+                        completion_rate: w.completion_rate || 0,
+                        average_rating: w.average_rating || 0,
+                        total_jobs: w.total_jobs || 0,
+                    },
                 }));
 
                 const ranked = await this.matchingService.rankWorkersForJob(
                     jobRequest as any,
                     workerProfiles as any,
-                    true
+                    true,
+                    filters.limit || 20,
                 );
 
                 const rankedWorkers = ranked.map(r => {
