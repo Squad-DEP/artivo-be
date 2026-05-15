@@ -97,7 +97,10 @@ export class WorkerJobService {
         const jobs = await Job.findAll({ where: { workerId } });
         const active = jobs.filter(j => j.status === 'in_progress').length;
         const completed = jobs.filter(j => j.status === 'completed' || j.status === 'paid').length;
-        const totalEarned = jobs.filter(j => j.status === 'paid').reduce((sum, j) => sum + Number(j.amount), 0);
+        // Count completed + paid as earned (payout fires on completion)
+        const totalEarned = jobs
+            .filter(j => j.status === 'completed' || j.status === 'paid')
+            .reduce((sum, j) => sum + Number(j.amount), 0);
         const pendingEarnings = jobs.filter(j => j.status === 'in_progress').reduce((sum, j) => sum + Number(j.amount), 0);
 
         const rep = await ReputationScore.findOne({ where: { userId: workerId } });
@@ -111,6 +114,68 @@ export class WorkerJobService {
             completion_rate: Number(rep?.completionRate ?? 0),
             average_rating: Number(rep?.averageRating ?? 0),
         };
+    }
+
+    async getWorkerEarnings(workerId: string): Promise<{
+        summary: { total_earned: number; total_paid_out: number; pending_payout: number; failed_payout: number };
+        payouts: {
+            job_id: string; title: string; customer_name: string; amount: number; completed_at: Date | null;
+            payment_method: string; payout_reference: string | null;
+            payout_status: 'success' | 'pending' | 'failed' | 'not_initiated' | 'offline';
+            payout_amount: number | null; bank_name: string | null; account_last4: string | null;
+        }[];
+    }> {
+        const rows = await sequelize.query<{
+            job_id: string; title: string; customer_name: string; amount: string; completed_at: Date | null;
+            payment_method: string; payout_reference: string | null;
+            wl_status: string | null; wl_amount: string | null;
+            bank_name: string | null; account_number: string | null;
+        }>(`
+            SELECT j.id AS job_id, jr.title, uc.full_name AS customer_name,
+                   j.amount, j.completed_at, j.payment_method,
+                   j.payout_reference,
+                   wl.status AS wl_status, wl.amount AS wl_amount,
+                   wba.bank_name, wba.account_number
+            FROM jobs j
+            JOIN job_requests jr ON jr.id = j.job_request_id
+            JOIN users uc ON uc.id = j.customer_id
+            LEFT JOIN withdrawal_logs wl ON wl.squad_transaction_reference = j.payout_reference
+            LEFT JOIN worker_bank_accounts wba ON wba.user_id = j.worker_id
+            WHERE j.worker_id = $1
+              AND j.status IN ('completed', 'paid')
+              AND j.payment_method != 'offline'
+            ORDER BY j.completed_at DESC NULLS LAST
+        `, { bind: [workerId], type: QueryTypes.SELECT });
+
+        const payouts = rows.map(r => {
+            let payout_status: 'success' | 'pending' | 'failed' | 'not_initiated' | 'offline' = 'not_initiated';
+            if (r.payment_method === 'offline') payout_status = 'offline';
+            else if (r.wl_status === 'success') payout_status = 'success';
+            else if (r.wl_status === 'pending') payout_status = 'pending';
+            else if (r.wl_status === 'failed') payout_status = 'failed';
+            else if (!r.payout_reference) payout_status = 'not_initiated';
+
+            return {
+                job_id: r.job_id,
+                title: r.title,
+                customer_name: r.customer_name,
+                amount: Number(r.amount),
+                completed_at: r.completed_at,
+                payment_method: r.payment_method,
+                payout_reference: r.payout_reference ?? null,
+                payout_status,
+                payout_amount: r.wl_amount ? Number(r.wl_amount) : null,
+                bank_name: r.bank_name ?? null,
+                account_last4: r.account_number ? r.account_number.slice(-4) : null,
+            };
+        });
+
+        const total_earned = payouts.reduce((s, p) => s + p.amount, 0);
+        const total_paid_out = payouts.filter(p => p.payout_status === 'success').reduce((s, p) => s + (p.payout_amount ?? p.amount), 0);
+        const pending_payout = payouts.filter(p => p.payout_status === 'pending').reduce((s, p) => s + p.amount, 0);
+        const failed_payout = payouts.filter(p => p.payout_status === 'failed' || p.payout_status === 'not_initiated').reduce((s, p) => s + p.amount, 0);
+
+        return { summary: { total_earned, total_paid_out, pending_payout, failed_payout }, payouts };
     }
 
     async getWorkerProposals(workerId: string): Promise<{
@@ -131,6 +196,7 @@ export class WorkerJobService {
             JOIN job_types jt ON jr.job_type_id = jt.id
             JOIN users u ON jr.customer_id = u.id
             WHERE jp.worker_id = $1
+            AND jr.status NOT IN ('assigned', 'completed')
             ORDER BY jp.created_at DESC
         `, { bind: [workerId], type: QueryTypes.SELECT }) as Promise<any[]>;
     }

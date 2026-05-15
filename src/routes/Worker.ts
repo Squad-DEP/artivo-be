@@ -296,6 +296,51 @@ app.get('/jobs/stats/worker', [
     return workerController.getStats(req, res, next);
 });
 
+/**
+ * @openapi
+ * /worker/earnings:
+ *   get:
+ *     description: Get earnings summary and per-job payout history for the authenticated worker
+ *     tags: [Worker]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Earnings summary + payout list
+ */
+app.get('/worker/earnings', [
+    passport.authenticate('jwt', { session: false }),
+], async (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    return workerController.getEarnings(req, res, next);
+});
+
+/**
+ * @openapi
+ * /worker/retry-payout/{job_id}:
+ *   post:
+ *     description: Re-trigger payout for a completed job where payout wasn't initiated (e.g. bank account was added later)
+ *     tags: [Worker]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: job_id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Payout initiated
+ */
+app.post('/worker/retry-payout/:job_id', [
+    passport.authenticate('jwt', { session: false }),
+    param('job_id').exists().isUUID(),
+], async (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) return res.status(422).json({ errors: errors.mapped() });
+    return workerController.retryPayout(req, res, next);
+});
+
 app.get('/worker/profile/me', [
     passport.authenticate('jwt', { session: false }),
 ], async (req: express.Request, res: express.Response, next: express.NextFunction) => {

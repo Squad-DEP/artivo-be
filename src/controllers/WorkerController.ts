@@ -97,15 +97,29 @@ export class WorkerController {
 
             if (result.released) {
                 await this.jobService.completeJob(job_id);
-                const payout = await this.payoutService.initiateJobPayout(job_id);
-                return res.json({
-                    success: true,
-                    msg: payout.skipped
-                        ? 'Job completed. Offline payment — no transfer needed.'
-                        : 'Both parties confirmed. Payment is being transferred to your bank account.',
-                    released: true,
-                    payout_reference: payout.reference,
-                });
+                try {
+                    const payout = await this.payoutService.initiateJobPayout(job_id);
+                    return res.json({
+                        success: true,
+                        msg: payout.skipped
+                            ? 'Job completed. Offline payment — no transfer needed.'
+                            : 'Both parties confirmed. Payment is being transferred to your bank account.',
+                        released: true,
+                        payout_reference: payout.reference,
+                        needs_bank_account: false,
+                    });
+                } catch (payoutErr: any) {
+                    // Job is still marked complete; worker can add bank account and retry payout
+                    if (payoutErr.message?.includes('bank account')) {
+                        return res.json({
+                            success: true,
+                            msg: 'Job completed! Add your bank account in the Payments section to receive your ₦ payout.',
+                            released: true,
+                            needs_bank_account: true,
+                        });
+                    }
+                    throw payoutErr;
+                }
             }
 
             return res.json({
@@ -168,6 +182,46 @@ export class WorkerController {
             const stats = await this.workerJobService.getWorkerStats(req.user.id);
             return res.json(stats);
         } catch (error) {
+            return next(error);
+        }
+    }
+
+    async getEarnings(req: express.Request, res: express.Response, next: express.NextFunction) {
+        try {
+            const earnings = await this.workerJobService.getWorkerEarnings(req.user.id);
+            return res.json(earnings);
+        } catch (error) {
+            return next(error);
+        }
+    }
+
+    async retryPayout(req: express.Request, res: express.Response, next: express.NextFunction) {
+        try {
+            const { job_id } = req.params;
+            const isOwner = await this.jobService.verifyJobOwnership(job_id, req.user.id, USER_ROLE.WORKER);
+            if (!isOwner) return res.status(404).json({ msg: 'Job not found' });
+
+            const job = await this.jobService.getJobById(job_id);
+            if (!job || job.status !== JOB_STATUS.COMPLETED) {
+                return res.status(400).json({ msg: 'Job must be completed before requesting payout.' });
+            }
+            if (job.payoutReference) {
+                return res.status(400).json({ msg: 'Payout already initiated for this job.' });
+            }
+
+            const payout = await this.payoutService.initiateJobPayout(job_id);
+            return res.json({
+                success: true,
+                msg: payout.skipped
+                    ? 'Offline job — no transfer needed.'
+                    : 'Payout initiated. Funds will arrive within minutes.',
+                reference: payout.reference,
+                amount: payout.amount,
+            });
+        } catch (error: any) {
+            if (error.message?.includes('bank account')) {
+                return res.status(400).json({ msg: error.message });
+            }
             return next(error);
         }
     }

@@ -134,8 +134,8 @@ export class EscrowService {
         }
 
         const update: Record<string, boolean> = {};
-        if (role === USER_ROLE.WORKER) update.worker_confirmed = true;
-        if (role === USER_ROLE.CUSTOMER) update.customer_confirmed = true;
+        if (role === USER_ROLE.WORKER) update.workerConfirmed = true;
+        if (role === USER_ROLE.CUSTOMER) update.customerConfirmed = true;
 
         await EscrowEntry.update(update, { where: { jobId } });
 

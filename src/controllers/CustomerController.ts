@@ -183,15 +183,24 @@ export class CustomerController {
 
             if (result.released) {
                 await this.jobService.completeJob(job_id);
-                const payout = await this.payoutService.initiateJobPayout(job_id);
-                return res.json({
-                    success: true,
-                    msg: payout.skipped
-                        ? 'Job completed. This was an offline job — no transfer needed.'
-                        : 'Both parties confirmed. Payment is being transferred to the worker.',
-                    released: true,
-                    payout_reference: payout.reference,
-                });
+                try {
+                    const payout = await this.payoutService.initiateJobPayout(job_id);
+                    return res.json({
+                        success: true,
+                        msg: payout.skipped
+                            ? 'Job completed. This was an offline job — no transfer needed.'
+                            : 'Both parties confirmed. Payment is being transferred to the worker.',
+                        released: true,
+                        payout_reference: payout.reference,
+                    });
+                } catch (payoutErr: any) {
+                    // Job is complete; payout will be retried when worker adds bank account
+                    return res.json({
+                        success: true,
+                        msg: 'Job completed! The worker will need to add their bank account to receive payment.',
+                        released: true,
+                    });
+                }
             }
 
             return res.json({
