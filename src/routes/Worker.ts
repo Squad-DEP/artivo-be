@@ -302,6 +302,9 @@ app.get('/worker/jobs/stream', [
 app.get('/jobs/stats/worker', [
     passport.authenticate('jwt', { session: false }),
 ], async (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    if (req.user?.role !== 'worker') {
+        return res.status(403).json({ msg: 'Worker access only' });
+    }
     return workerController.getStats(req, res, next);
 });
 
