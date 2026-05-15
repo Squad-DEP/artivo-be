@@ -189,12 +189,11 @@ export class CustomerController {
                         success: true,
                         msg: payout.skipped
                             ? 'Job completed. This was an offline job — no transfer needed.'
-                            : 'Both parties confirmed. Payment is being transferred to the worker.',
+                            : 'Both parties confirmed. Payment is being sent to the worker.',
                         released: true,
                         payout_reference: payout.reference,
                     });
                 } catch (payoutErr: any) {
-                    // Job is complete; payout will be retried when worker adds bank account
                     return res.json({
                         success: true,
                         msg: 'Job completed! The worker will need to add their bank account to receive payment.',
@@ -215,6 +214,27 @@ export class CustomerController {
                 return res.status(400).json({ msg: error.message });
             }
             if (error.message?.includes('bank account')) {
+                return res.status(400).json({ msg: error.message });
+            }
+            return next(error);
+        }
+    }
+
+    async uncompleteJob(req: express.Request, res: express.Response, next: express.NextFunction) {
+        try {
+            const { job_id } = req.params;
+            const isOwner = await this.jobService.verifyJobOwnership(job_id, req.user.id, USER_ROLE.CUSTOMER);
+            if (!isOwner) return res.status(404).json({ msg: 'Job not found' });
+
+            const result = await this.escrowService.revokeConfirmation(job_id, USER_ROLE.CUSTOMER);
+            return res.json({
+                success: true,
+                msg: 'Your completion mark has been removed.',
+                worker_confirmed: result.workerConfirmed,
+                customer_confirmed: result.customerConfirmed,
+            });
+        } catch (error: any) {
+            if (error.message?.includes('Payout already initiated') || error.message?.includes('not marked') || error.message?.includes('not confirmed')) {
                 return res.status(400).json({ msg: error.message });
             }
             return next(error);

@@ -197,6 +197,15 @@ app.post('/worker/complete-job/:job_id', [
     return workerController.completeJob(req, res, next);
 });
 
+app.post('/worker/uncomplete-job/:job_id', [
+    passport.authenticate('jwt', { session: false }),
+    param('job_id').exists().isUUID(),
+], async (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) return res.status(422).json({ errors: errors.mapped() });
+    return workerController.uncompleteJob(req, res, next);
+});
+
 /**
  * @openapi
  * /worker/my-jobs:

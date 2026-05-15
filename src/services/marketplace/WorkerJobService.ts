@@ -145,6 +145,7 @@ export class WorkerJobService {
             FROM jobs j
             JOIN job_requests jr ON jr.id = j.job_request_id
             JOIN users uc ON uc.id = j.customer_id
+            JOIN escrow_entries ee ON ee.job_id = j.id AND ee.status = 'released'
             LEFT JOIN withdrawal_logs wl ON wl.squad_transaction_reference = j.payout_reference
             LEFT JOIN worker_bank_accounts wba ON wba.user_id = j.worker_id
             WHERE j.worker_id = $1

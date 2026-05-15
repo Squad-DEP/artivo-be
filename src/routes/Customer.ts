@@ -144,6 +144,15 @@ app.post('/customer/complete-job/:job_id', [
     return customerController.completeJob(req, res, next);
 });
 
+app.post('/customer/uncomplete-job/:job_id', [
+    passport.authenticate('jwt', { session: false }),
+    param('job_id').exists().isUUID(),
+], async (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) return res.status(422).json({ errors: errors.mapped() });
+    return customerController.uncompleteJob(req, res, next);
+});
+
 app.post('/customer/rate', [
     passport.authenticate('jwt', { session: false }),
     body('job_id').exists().isUUID(),

@@ -158,6 +158,41 @@ export class EscrowService {
     }
 
     /**
+     * Revoke one party's completion confirmation.
+     * Only allowed while escrow is still FUNDED (payout not yet initiated).
+     */
+    async revokeConfirmation(
+        jobId: string,
+        role: typeof USER_ROLE[keyof typeof USER_ROLE]
+    ): Promise<{ workerConfirmed: boolean; customerConfirmed: boolean }> {
+        const escrow = await this.getEscrowByJobId(jobId);
+        if (!escrow) throw new Error('Escrow not found for this job');
+
+        if (escrow.status === ESCROW_STATUS.RELEASED) {
+            throw new Error('Payout already initiated — completion cannot be undone.');
+        }
+        if (escrow.status !== ESCROW_STATUS.FUNDED) {
+            throw new Error('Job payment not confirmed yet — nothing to revoke.');
+        }
+
+        const update: Record<string, boolean> = {};
+        if (role === USER_ROLE.WORKER) {
+            if (!escrow.workerConfirmed) throw new Error('You have not marked this job as complete.');
+            update.workerConfirmed = false;
+        } else if (role === USER_ROLE.CUSTOMER) {
+            if (!escrow.customerConfirmed) throw new Error('You have not marked this job as complete.');
+            update.customerConfirmed = false;
+        }
+
+        await EscrowEntry.update(update, { where: { jobId } });
+        const updated = await this.getEscrowByJobId(jobId);
+        return {
+            workerConfirmed: updated!.workerConfirmed ?? false,
+            customerConfirmed: updated!.customerConfirmed ?? false,
+        };
+    }
+
+    /**
      * Release escrow to the worker.
      * For internal/admin use. Normal flow goes through confirmCompletion.
      */

@@ -103,17 +103,16 @@ export class WorkerController {
                         success: true,
                         msg: payout.skipped
                             ? 'Job completed. Offline payment — no transfer needed.'
-                            : 'Both parties confirmed. Payment is being transferred to your bank account.',
+                            : 'Both parties confirmed. Your payment is on its way.',
                         released: true,
                         payout_reference: payout.reference,
                         needs_bank_account: false,
                     });
                 } catch (payoutErr: any) {
-                    // Job is still marked complete; worker can add bank account and retry payout
                     if (payoutErr.message?.includes('bank account')) {
                         return res.json({
                             success: true,
-                            msg: 'Job completed! Add your bank account in the Payments section to receive your ₦ payout.',
+                            msg: 'Job completed! Add your bank account in the Payments section to receive your payout.',
                             released: true,
                             needs_bank_account: true,
                         });
@@ -173,6 +172,27 @@ export class WorkerController {
 
             return res.json({ review, msg: 'Customer rated successfully' });
         } catch (error) {
+            return next(error);
+        }
+    }
+
+    async uncompleteJob(req: express.Request, res: express.Response, next: express.NextFunction) {
+        try {
+            const { job_id } = req.params;
+            const isOwner = await this.jobService.verifyJobOwnership(job_id, req.user.id, USER_ROLE.WORKER);
+            if (!isOwner) return res.status(404).json({ msg: 'Job not found' });
+
+            const result = await this.escrowService.revokeConfirmation(job_id, USER_ROLE.WORKER);
+            return res.json({
+                success: true,
+                msg: 'Your completion mark has been removed.',
+                worker_confirmed: result.workerConfirmed,
+                customer_confirmed: result.customerConfirmed,
+            });
+        } catch (error: any) {
+            if (error.message?.includes('Payout already initiated') || error.message?.includes('not marked') || error.message?.includes('not confirmed')) {
+                return res.status(400).json({ msg: error.message });
+            }
             return next(error);
         }
     }
