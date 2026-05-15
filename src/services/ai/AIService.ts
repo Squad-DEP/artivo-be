@@ -49,7 +49,7 @@ class AIService {
                 
                 // If there's another provider in the array, the loop continues to the next one
                 if (i < this.providers.length - 1) {
-                    console.log(`🔄 Switching to next available provider...`);
+                    console.log(`Switching to next available provider...`);
                     continue; 
                 }
             } else {
@@ -155,8 +155,8 @@ Do not return any conversational text or markdown blocks, only return raw string
     /**
      * General chat
      */
-    async chat(message: string, context?: string[]): Promise<AIResult> {
-        const prompt = 'You are a helpful assistant for the Artivo platform, connecting artisans with customers.';
+    async chat(message: string, context?: string[], systemPrompt?: string): Promise<AIResult> {
+        const prompt = systemPrompt || 'You are a helpful assistant for the Artivo platform, connecting artisans with customers.';
         return this.executeWithFallback(prompt, message, context);
     }
 }

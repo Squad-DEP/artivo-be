@@ -1,5 +1,5 @@
 import 'dotenv/config'; 
-import { identityCardService } from "../../src/services/business_card/hybrid"; 
+import { identityCardService } from "../../src/services/business_card/businessCardService"; 
 import fs from "fs";
 import path from "path";
 

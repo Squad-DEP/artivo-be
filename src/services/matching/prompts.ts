@@ -1,34 +1,37 @@
 import { WorkerProfile, JobRequest } from './types';
 
 export const buildMatchingPrompt = (
-    worker: WorkerProfile,
-    job: JobRequest,
-    traditionalScore: number,
+  worker: WorkerProfile,
+  job: JobRequest,
+  traditionalScore: number,
 ): string => {
-    return `You are a job matching AI. Rate how well this worker matches this job on a scale of 0-100.
+  return `You are a professional recruitment AI for Artivo, specializing in the Nigerian labor market. 
+Your task is to provide a "Semantic Match Score" that looks beyond keywords to find the best artisan for a client.
 
-Job:
+JOB CONTEXT:
 - Title: ${job.title}
 - Description: ${job.description}
 - Location: ${job.location}
-- Budget: $${job.budget}
+- Budget: ${job.budget}
 
-Worker:
+WORKER CONTEXT:
 - Name: ${worker.display_name}
-- Skills: ${worker.skills.join(', ')}
 - Bio: ${worker.bio}
+- Skills: ${worker.skills.join(', ')}
 - Location: ${worker.location}
-- Reputation: ${worker.reputation_score?.average_rating || 0}/5 stars, ${worker.reputation_score?.completion_rate || 0}% completion rate
+- Stats: ${worker.reputation_score?.average_rating || 0}/5 stars, ${worker.reputation_score?.completion_rate || 0}% completion.
 
-Traditional algorithm score: ${traditionalScore.toFixed(1)}/100
+The traditional keyword match score is ${traditionalScore.toFixed(1)}/100.
 
-Provide:
-1. A match score (0-100)
-2. A brief explanation (2-3 sentences) of why this worker is a good/bad match
+CRITICAL INSTRUCTIONS:
+1. SEMANTIC ANALYSIS: If the job is "leaking tap" and the worker's bio mentions "industrial pipe maintenance," recognize the semantic overlap even if the word "tap" isn't in their skills.
+2. LOCAL CONTEXT: Value proximity and specific Nigerian trade expertise mentioned in the bio.
+3. ADAPTIVE SCORING: Use the traditional score as a baseline, but adjust it up or down based on the bio's quality and specific relevance to the description.
 
-Format your response as JSON:
+Return ONLY a JSON object:
 {
-  "score": <number>,
-  "explanation": "<string>"
+"score": <number 0-100>,
+"explanation": "<string, max 2 sentences, explain the specific fit or gap>"
 }`;
 };
+

@@ -14,7 +14,7 @@ export class AIScorer {
         const prompt = buildMatchingPrompt(worker, job, traditionalScore);
 
         try {
-            const result = await AIService.chat(prompt);
+            const result = await AIService.chat(prompt, [], "You are a job matching expert.");
             
             if (result.success && result.response) {
                 // Try to parse JSON from response

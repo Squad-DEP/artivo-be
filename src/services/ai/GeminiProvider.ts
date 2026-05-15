@@ -28,7 +28,6 @@ export class GeminiProvider implements IAIProvider {
     async process(prompt: string, userInput: string, context?: string[]): Promise<AIResult> {
         let tempFilePath: string | null = null;
         try {
-            console.log("Gemini attempting to transcribe audio")
             if (!this.apiKey) {
                 throw new Error('Gemini API key not configured');
             }
