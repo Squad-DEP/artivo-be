@@ -475,3 +475,338 @@ app.patch('/worker/profile/photo', [
         return next(error);
     }
 });
+
+// ─── Profile Update ──────────────────────────────────────────────────────────
+
+app.patch('/worker/profile', [
+    passport.authenticate('jwt', { session: false }),
+    body('display_name').optional().trim().isLength({ min: 2, max: 100 }),
+    body('bio').optional().trim().isLength({ max: 2000 }),
+    body('tagline').optional().trim().isLength({ max: 100 }),
+    body('skills').optional().isArray(),
+    body('location').optional().trim().isLength({ max: 255 }),
+    body('hourly_rate').optional({ nullable: true }).isFloat({ min: 0 }),
+    body('minimum_budget').optional({ nullable: true }).isFloat({ min: 0 }),
+    body('languages').optional().isArray(),
+    body('availability').optional().isIn(['available', 'busy', 'unavailable']),
+    body('categories').optional().isArray(),
+], async (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    try {
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) return res.status(422).json({ errors: errors.mapped() });
+
+        const allowedFields: Record<string, string> = {
+            display_name: 'displayName',
+            bio: 'bio',
+            tagline: 'tagline',
+            skills: 'skills',
+            location: 'location',
+            hourly_rate: 'hourlyRate',
+            minimum_budget: 'minimumBudget',
+            languages: 'languages',
+            availability: 'availability',
+            categories: 'categories',
+        };
+
+        const data: Record<string, any> = {};
+        for (const [bodyKey, modelKey] of Object.entries(allowedFields)) {
+            if (req.body[bodyKey] !== undefined) {
+                data[modelKey] = req.body[bodyKey];
+            }
+        }
+
+        await workerProfileService.updateProfile(req.user.id, data);
+        const profile = await workerProfileService.getFullProfile(req.user.id);
+        return res.json(profile);
+    } catch (error) {
+        return next(error);
+    }
+});
+
+// ─── Experience CRUD ─────────────────────────────────────────────────────────
+
+app.post('/worker/profile/experience', [
+    passport.authenticate('jwt', { session: false }),
+    body('title').trim().notEmpty().isLength({ max: 255 }),
+    body('company').trim().notEmpty().isLength({ max: 255 }),
+    body('start_year').isInt({ min: 1950, max: 2100 }),
+    body('end_year').optional({ nullable: true }).isInt({ min: 1950, max: 2100 }),
+    body('description').optional().trim().isLength({ max: 1000 }),
+], async (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    try {
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) return res.status(422).json({ errors: errors.mapped() });
+
+        const { WorkerExperience } = await import('../models/WorkerExperience');
+        const item = await WorkerExperience.create({
+            userId: req.user.id,
+            title: req.body.title,
+            company: req.body.company,
+            startYear: req.body.start_year,
+            endYear: req.body.end_year ?? null,
+            description: req.body.description ?? null,
+        });
+        return res.status(201).json(item);
+    } catch (error) {
+        return next(error);
+    }
+});
+
+app.put('/worker/profile/experience/:id', [
+    passport.authenticate('jwt', { session: false }),
+    param('id').isUUID(),
+    body('title').trim().notEmpty().isLength({ max: 255 }),
+    body('company').trim().notEmpty().isLength({ max: 255 }),
+    body('start_year').isInt({ min: 1950, max: 2100 }),
+    body('end_year').optional({ nullable: true }).isInt({ min: 1950, max: 2100 }),
+    body('description').optional().trim().isLength({ max: 1000 }),
+], async (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    try {
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) return res.status(422).json({ errors: errors.mapped() });
+
+        const { WorkerExperience } = await import('../models/WorkerExperience');
+        const item = await WorkerExperience.findOne({ where: { id: req.params.id, userId: req.user.id } });
+        if (!item) return res.status(404).json({ msg: 'Not found' });
+
+        await item.update({
+            title: req.body.title,
+            company: req.body.company,
+            startYear: req.body.start_year,
+            endYear: req.body.end_year ?? null,
+            description: req.body.description ?? null,
+        });
+        return res.json(item);
+    } catch (error) {
+        return next(error);
+    }
+});
+
+app.delete('/worker/profile/experience/:id', [
+    passport.authenticate('jwt', { session: false }),
+    param('id').isUUID(),
+], async (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    try {
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) return res.status(422).json({ errors: errors.mapped() });
+
+        const { WorkerExperience } = await import('../models/WorkerExperience');
+        const deleted = await WorkerExperience.destroy({ where: { id: req.params.id, userId: req.user.id } });
+        if (!deleted) return res.status(404).json({ msg: 'Not found' });
+        return res.json({ success: true });
+    } catch (error) {
+        return next(error);
+    }
+});
+
+// ─── Education CRUD ──────────────────────────────────────────────────────────
+
+app.post('/worker/profile/education', [
+    passport.authenticate('jwt', { session: false }),
+    body('title').trim().notEmpty().isLength({ max: 255 }),
+    body('institution').trim().notEmpty().isLength({ max: 255 }),
+    body('year').optional({ nullable: true }).isInt({ min: 1950, max: 2100 }),
+], async (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    try {
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) return res.status(422).json({ errors: errors.mapped() });
+
+        const { WorkerEducation } = await import('../models/WorkerEducation');
+        const item = await WorkerEducation.create({
+            userId: req.user.id,
+            title: req.body.title,
+            institution: req.body.institution,
+            year: req.body.year ?? null,
+        });
+        return res.status(201).json(item);
+    } catch (error) {
+        return next(error);
+    }
+});
+
+app.put('/worker/profile/education/:id', [
+    passport.authenticate('jwt', { session: false }),
+    param('id').isUUID(),
+    body('title').trim().notEmpty().isLength({ max: 255 }),
+    body('institution').trim().notEmpty().isLength({ max: 255 }),
+    body('year').optional({ nullable: true }).isInt({ min: 1950, max: 2100 }),
+], async (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    try {
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) return res.status(422).json({ errors: errors.mapped() });
+
+        const { WorkerEducation } = await import('../models/WorkerEducation');
+        const item = await WorkerEducation.findOne({ where: { id: req.params.id, userId: req.user.id } });
+        if (!item) return res.status(404).json({ msg: 'Not found' });
+
+        await item.update({
+            title: req.body.title,
+            institution: req.body.institution,
+            year: req.body.year ?? null,
+        });
+        return res.json(item);
+    } catch (error) {
+        return next(error);
+    }
+});
+
+app.delete('/worker/profile/education/:id', [
+    passport.authenticate('jwt', { session: false }),
+    param('id').isUUID(),
+], async (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    try {
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) return res.status(422).json({ errors: errors.mapped() });
+
+        const { WorkerEducation } = await import('../models/WorkerEducation');
+        const deleted = await WorkerEducation.destroy({ where: { id: req.params.id, userId: req.user.id } });
+        if (!deleted) return res.status(404).json({ msg: 'Not found' });
+        return res.json({ success: true });
+    } catch (error) {
+        return next(error);
+    }
+});
+
+// ─── Certifications CRUD ─────────────────────────────────────────────────────
+
+app.post('/worker/profile/certifications', [
+    passport.authenticate('jwt', { session: false }),
+    body('title').trim().notEmpty().isLength({ max: 255 }),
+    body('issuer').trim().notEmpty().isLength({ max: 255 }),
+    body('year').optional({ nullable: true }).isInt({ min: 1950, max: 2100 }),
+], async (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    try {
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) return res.status(422).json({ errors: errors.mapped() });
+
+        const { WorkerCertification } = await import('../models/WorkerCertification');
+        const item = await WorkerCertification.create({
+            userId: req.user.id,
+            title: req.body.title,
+            issuer: req.body.issuer,
+            year: req.body.year ?? null,
+        });
+        return res.status(201).json(item);
+    } catch (error) {
+        return next(error);
+    }
+});
+
+app.put('/worker/profile/certifications/:id', [
+    passport.authenticate('jwt', { session: false }),
+    param('id').isUUID(),
+    body('title').trim().notEmpty().isLength({ max: 255 }),
+    body('issuer').trim().notEmpty().isLength({ max: 255 }),
+    body('year').optional({ nullable: true }).isInt({ min: 1950, max: 2100 }),
+], async (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    try {
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) return res.status(422).json({ errors: errors.mapped() });
+
+        const { WorkerCertification } = await import('../models/WorkerCertification');
+        const item = await WorkerCertification.findOne({ where: { id: req.params.id, userId: req.user.id } });
+        if (!item) return res.status(404).json({ msg: 'Not found' });
+
+        await item.update({
+            title: req.body.title,
+            issuer: req.body.issuer,
+            year: req.body.year ?? null,
+        });
+        return res.json(item);
+    } catch (error) {
+        return next(error);
+    }
+});
+
+app.delete('/worker/profile/certifications/:id', [
+    passport.authenticate('jwt', { session: false }),
+    param('id').isUUID(),
+], async (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    try {
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) return res.status(422).json({ errors: errors.mapped() });
+
+        const { WorkerCertification } = await import('../models/WorkerCertification');
+        const deleted = await WorkerCertification.destroy({ where: { id: req.params.id, userId: req.user.id } });
+        if (!deleted) return res.status(404).json({ msg: 'Not found' });
+        return res.json({ success: true });
+    } catch (error) {
+        return next(error);
+    }
+});
+
+// ─── Portfolio CRUD ──────────────────────────────────────────────────────────
+
+app.post('/worker/profile/portfolio', [
+    passport.authenticate('jwt', { session: false }),
+    body('title').trim().notEmpty().isLength({ max: 255 }),
+    body('description').optional().trim().isLength({ max: 1000 }),
+    body('image_url').optional().trim(),
+    body('images').optional().isArray(),
+    body('category').optional().trim().isLength({ max: 100 }),
+], async (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    try {
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) return res.status(422).json({ errors: errors.mapped() });
+
+        const { WorkerPortfolio } = await import('../models/WorkerPortfolio');
+        const item = await WorkerPortfolio.create({
+            userId: req.user.id,
+            title: req.body.title,
+            description: req.body.description ?? null,
+            imageUrl: req.body.image_url ?? null,
+            images: req.body.images ?? [],
+            category: req.body.category ?? null,
+        });
+        return res.status(201).json(item);
+    } catch (error) {
+        return next(error);
+    }
+});
+
+app.put('/worker/profile/portfolio/:id', [
+    passport.authenticate('jwt', { session: false }),
+    param('id').isUUID(),
+    body('title').trim().notEmpty().isLength({ max: 255 }),
+    body('description').optional().trim().isLength({ max: 1000 }),
+    body('image_url').optional().trim(),
+    body('images').optional().isArray(),
+    body('category').optional().trim().isLength({ max: 100 }),
+], async (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    try {
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) return res.status(422).json({ errors: errors.mapped() });
+
+        const { WorkerPortfolio } = await import('../models/WorkerPortfolio');
+        const item = await WorkerPortfolio.findOne({ where: { id: req.params.id, userId: req.user.id } });
+        if (!item) return res.status(404).json({ msg: 'Not found' });
+
+        await item.update({
+            title: req.body.title,
+            description: req.body.description ?? null,
+            imageUrl: req.body.image_url ?? null,
+            images: req.body.images ?? [],
+            category: req.body.category ?? null,
+        });
+        return res.json(item);
+    } catch (error) {
+        return next(error);
+    }
+});
+
+app.delete('/worker/profile/portfolio/:id', [
+    passport.authenticate('jwt', { session: false }),
+    param('id').isUUID(),
+], async (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    try {
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) return res.status(422).json({ errors: errors.mapped() });
+
+        const { WorkerPortfolio } = await import('../models/WorkerPortfolio');
+        const deleted = await WorkerPortfolio.destroy({ where: { id: req.params.id, userId: req.user.id } });
+        if (!deleted) return res.status(404).json({ msg: 'Not found' });
+        return res.json({ success: true });
+    } catch (error) {
+        return next(error);
+    }
+});
