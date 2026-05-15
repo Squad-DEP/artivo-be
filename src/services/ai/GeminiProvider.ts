@@ -25,7 +25,7 @@ export class GeminiProvider implements IAIProvider {
         this.fileManager = new GoogleAIFileManager(this.apiKey);
     }
 
-    async process(prompt: string, userInput: string, context?: string[]): Promise<AIResult> {
+    async process(prompt: string, userInput: string, context?: string[], mimeType?: string): Promise<AIResult> {
         let tempFilePath: string | null = null;
         try {
             if (!this.apiKey) {
@@ -36,26 +36,32 @@ export class GeminiProvider implements IAIProvider {
                 ? `Conversation Context History:\n${context.join('\n')}\n\n`
                 : '';
 
-            //check if userInput is likely a base64 audio string.. 
+            //check if userInput is likely a base64 audio string..
             const isAudio = userInput.length > 100 && !userInput.includes(' ');
 
-            let parts: any[] = [{ text: `${prompt}\n\n${structuredContext}` }]; 
+            let parts: any[] = [{ text: `${prompt}\n\n${structuredContext}` }];
 
             if (isAudio) {
                 const buffer = Buffer.from(userInput.replace(/^data:audio\/\w+;base64,/, ''), 'base64');
+                const actualMime = mimeType || 'audio/webm';
+                // Pick a file extension that matches the actual audio format
+                const ext = actualMime.includes('mp4') ? 'm4a'
+                    : actualMime.includes('ogg') ? 'ogg'
+                    : actualMime.includes('wav') ? 'wav'
+                    : 'webm';
 
-                //if audio is > 1mb, use filemanger 
+                //if audio is > 1mb, use filemanager
                 if (buffer.length > 1024 * 1024) {
-                    tempFilePath = path.join(os.tmpdir(), `artivo_${Date.now()}.m4a`);
+                    tempFilePath = path.join(os.tmpdir(), `artivo_${Date.now()}.${ext}`);
                     await fs.writeFile(tempFilePath, buffer); //non blocking write
                     const upload = await this.fileManager.uploadFile(tempFilePath, {
-                        mimeType: 'audio/mp4',
+                        mimeType: actualMime,
                         displayName: 'ArtisanRecording',
                     });
 
                     parts.push({ fileData: { mimeType: upload.file.mimeType, fileUri: upload.file.uri } });
                 } else {
-                    parts.push({ inlineData: { mimeType: 'audio/wav', data: buffer.toString('base64') } });
+                    parts.push({ inlineData: { mimeType: actualMime, data: buffer.toString('base64') } });
                 }
 
             } else {

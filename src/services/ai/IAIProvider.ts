@@ -10,7 +10,7 @@ export interface IAIProvider {
      * @param userInput - User's input text
      * @param context - Conversation history
      */
-    process(prompt: string, userInput: string, context?: string[]): Promise<AIResult>;
+    process(prompt: string, userInput: string, context?: string[], mimeType?: string): Promise<AIResult>;
 }
 
 export interface AIResult {

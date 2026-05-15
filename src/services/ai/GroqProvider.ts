@@ -16,7 +16,7 @@ export class GroqProvider implements IAIProvider {
         this.groq = new Groq({ apiKey: this.apiKey });
     }
 
-    async process(prompt: string, userInput: string, context?: string[]): Promise<AIResult> {
+    async process(prompt: string, userInput: string, context?: string[], mimeType?: string): Promise<AIResult> {
         let tempFilePath: string | null = null;
 
         try {
@@ -26,13 +26,19 @@ export class GroqProvider implements IAIProvider {
             }
             let textToProcess = userInput;
 
-            //detct if input is base 64 audio
+            //detect if input is base64 audio
             const isAudio = userInput.length > 100 && !userInput.includes(' ');
 
             if(isAudio) {
                 const buffer = Buffer.from(userInput.replace(/^data:audio\/\w+;base64,/, ''), 'base64');
 
-                tempFilePath = path.join(os.tmpdir(), `groq_stt_${Date.now()}.wav`);
+                // Use the actual mime type to pick the right extension — Whisper uses the filename extension to detect format
+                const ext = mimeType?.includes('mp4') ? 'mp4'
+                    : mimeType?.includes('ogg') ? 'ogg'
+                    : mimeType?.includes('wav') ? 'wav'
+                    : 'webm';
+
+                tempFilePath = path.join(os.tmpdir(), `groq_stt_${Date.now()}.${ext}`);
 
                 await fsPromises.writeFile(tempFilePath, buffer);
 
