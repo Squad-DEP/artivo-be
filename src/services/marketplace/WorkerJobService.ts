@@ -53,11 +53,14 @@ export class WorkerJobService {
         return deleted > 0;
     }
 
-    async getWorkerSubscriptions(workerId: string): Promise<JobSubscriptionModel[]> {
-        return JobSubscription.findAll({
-            where: { workerId },
-            order: [['createdAt', 'DESC']],
-        });
+    async getWorkerSubscriptions(workerId: string): Promise<{ id: string; job_type_id: string; job_type_name: string; created_at: Date }[]> {
+        return sequelize.query(`
+            SELECT js.id, js.job_type_id, jt.name AS job_type_name, js.created_at
+            FROM job_subscriptions js
+            JOIN job_types jt ON jt.id = js.job_type_id
+            WHERE js.worker_id = $1
+            ORDER BY jt.name ASC
+        `, { bind: [workerId], type: QueryTypes.SELECT }) as Promise<any[]>;
     }
 
     async getAvailableJobsForWorker(workerId: string): Promise<JobRequestForWorker[]> {
@@ -79,6 +82,9 @@ export class WorkerJobService {
             JOIN job_types jt ON jr.job_type_id = jt.id
             WHERE jr.status = 'open'
             AND jr.customer_id != $1
+            AND jr.job_type_id IN (
+                SELECT job_type_id FROM job_subscriptions WHERE worker_id = $1
+            )
             AND NOT EXISTS (
                 SELECT 1 FROM job_proposals jp
                 WHERE jp.job_request_id = jr.id
