@@ -71,8 +71,7 @@ export class DocumentService {
         const document = await Document.findOne({ where: { id, userId } });
         if (!document) throw new Error('Document not found');
 
-        const isPublic = ['profile_photo', 'business_card', 'generated_card'].includes(document.documentType);
-        await this.storageProvider.deleteObject(document.fileKey, isPublic);
+        await this.storageProvider.deleteObject(document.fileKey);
         await document.destroy();
         return true;
     }

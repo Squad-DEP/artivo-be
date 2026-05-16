@@ -609,6 +609,7 @@ app.post('/worker/profile/education', [
     body('title').trim().notEmpty().isLength({ max: 255 }),
     body('institution').trim().notEmpty().isLength({ max: 255 }),
     body('year').optional({ nullable: true }).isInt({ min: 1950, max: 2100 }),
+    body('file_url').optional({ nullable: true }).trim(),
 ], async (req: express.Request, res: express.Response, next: express.NextFunction) => {
     try {
         const errors = validationResult(req);
@@ -620,6 +621,7 @@ app.post('/worker/profile/education', [
             title: req.body.title,
             institution: req.body.institution,
             year: req.body.year ?? null,
+            fileUrl: req.body.file_url ?? null,
         });
         return res.status(201).json(item);
     } catch (error) {
@@ -633,6 +635,7 @@ app.put('/worker/profile/education/:id', [
     body('title').trim().notEmpty().isLength({ max: 255 }),
     body('institution').trim().notEmpty().isLength({ max: 255 }),
     body('year').optional({ nullable: true }).isInt({ min: 1950, max: 2100 }),
+    body('file_url').optional({ nullable: true }).trim(),
 ], async (req: express.Request, res: express.Response, next: express.NextFunction) => {
     try {
         const errors = validationResult(req);
@@ -642,12 +645,12 @@ app.put('/worker/profile/education/:id', [
         const item = await WorkerEducation.findOne({ where: { id: req.params.id, userId: req.user.id } });
         if (!item) return res.status(404).json({ msg: 'Not found' });
 
-        await item.update({
-            title: req.body.title,
-            institution: req.body.institution,
-            year: req.body.year ?? null,
-        });
-        return res.json(item);
+        item.set('title', req.body.title);
+        item.set('institution', req.body.institution);
+        item.set('year', req.body.year ?? null);
+        if (req.body.file_url !== undefined) item.set('fileUrl', req.body.file_url ?? null);
+        await item.save();
+        return res.json(item.toJSON());
     } catch (error) {
         return next(error);
     }
@@ -677,6 +680,7 @@ app.post('/worker/profile/certifications', [
     body('title').trim().notEmpty().isLength({ max: 255 }),
     body('issuer').trim().notEmpty().isLength({ max: 255 }),
     body('year').optional({ nullable: true }).isInt({ min: 1950, max: 2100 }),
+    body('file_url').optional({ nullable: true }).trim(),
 ], async (req: express.Request, res: express.Response, next: express.NextFunction) => {
     try {
         const errors = validationResult(req);
@@ -688,6 +692,7 @@ app.post('/worker/profile/certifications', [
             title: req.body.title,
             issuer: req.body.issuer,
             year: req.body.year ?? null,
+            fileUrl: req.body.file_url ?? null,
         });
         return res.status(201).json(item);
     } catch (error) {
@@ -701,6 +706,7 @@ app.put('/worker/profile/certifications/:id', [
     body('title').trim().notEmpty().isLength({ max: 255 }),
     body('issuer').trim().notEmpty().isLength({ max: 255 }),
     body('year').optional({ nullable: true }).isInt({ min: 1950, max: 2100 }),
+    body('file_url').optional({ nullable: true }).trim(),
 ], async (req: express.Request, res: express.Response, next: express.NextFunction) => {
     try {
         const errors = validationResult(req);
@@ -710,12 +716,12 @@ app.put('/worker/profile/certifications/:id', [
         const item = await WorkerCertification.findOne({ where: { id: req.params.id, userId: req.user.id } });
         if (!item) return res.status(404).json({ msg: 'Not found' });
 
-        await item.update({
-            title: req.body.title,
-            issuer: req.body.issuer,
-            year: req.body.year ?? null,
-        });
-        return res.json(item);
+        item.set('title', req.body.title);
+        item.set('issuer', req.body.issuer);
+        item.set('year', req.body.year ?? null);
+        if (req.body.file_url !== undefined) item.set('fileUrl', req.body.file_url ?? null);
+        await item.save();
+        return res.json(item.toJSON());
     } catch (error) {
         return next(error);
     }
@@ -743,10 +749,10 @@ app.delete('/worker/profile/certifications/:id', [
 app.post('/worker/profile/portfolio', [
     passport.authenticate('jwt', { session: false }),
     body('title').trim().notEmpty().isLength({ max: 255 }),
-    body('description').optional().trim().isLength({ max: 1000 }),
-    body('image_url').optional().trim(),
+    body('description').optional({ nullable: true }).trim().isLength({ max: 1000 }),
+    body('image_url').optional({ nullable: true }).trim(),
     body('images').optional().isArray(),
-    body('category').optional().trim().isLength({ max: 100 }),
+    body('category').optional({ nullable: true }).trim().isLength({ max: 100 }),
 ], async (req: express.Request, res: express.Response, next: express.NextFunction) => {
     try {
         const errors = validationResult(req);
@@ -771,10 +777,10 @@ app.put('/worker/profile/portfolio/:id', [
     passport.authenticate('jwt', { session: false }),
     param('id').isUUID(),
     body('title').trim().notEmpty().isLength({ max: 255 }),
-    body('description').optional().trim().isLength({ max: 1000 }),
-    body('image_url').optional().trim(),
+    body('description').optional({ nullable: true }).trim().isLength({ max: 1000 }),
+    body('image_url').optional({ nullable: true }).trim(),
     body('images').optional().isArray(),
-    body('category').optional().trim().isLength({ max: 100 }),
+    body('category').optional({ nullable: true }).trim().isLength({ max: 100 }),
 ], async (req: express.Request, res: express.Response, next: express.NextFunction) => {
     try {
         const errors = validationResult(req);
@@ -784,14 +790,13 @@ app.put('/worker/profile/portfolio/:id', [
         const item = await WorkerPortfolio.findOne({ where: { id: req.params.id, userId: req.user.id } });
         if (!item) return res.status(404).json({ msg: 'Not found' });
 
-        await item.update({
-            title: req.body.title,
-            description: req.body.description ?? null,
-            imageUrl: req.body.image_url ?? null,
-            images: req.body.images ?? [],
-            category: req.body.category ?? null,
-        });
-        return res.json(item);
+        item.set('title', req.body.title);
+        item.set('description', req.body.description ?? null);
+        item.set('imageUrl', req.body.image_url ?? null);
+        item.set('images', req.body.images ?? []);
+        item.set('category', req.body.category ?? null);
+        await item.save();
+        return res.json(item.toJSON());
     } catch (error) {
         return next(error);
     }

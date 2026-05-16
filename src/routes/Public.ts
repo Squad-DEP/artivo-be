@@ -1,10 +1,12 @@
 import { param, validationResult } from 'express-validator';
 import express from 'express';
 import { WorkerService } from '../services/marketplace/WorkerService';
+import { WorkerProfileService } from '../services/marketplace/WorkerProfileService';
 
 export const app = express.Router();
 
 const workerService = new WorkerService();
+const workerProfileService = new WorkerProfileService();
 
 /**
  * Public endpoint - Get worker profile by share slug
@@ -18,13 +20,13 @@ app.get('/profile/:slug', [
         if (!errors.isEmpty()) return res.status(422).json({ errors: errors.mapped() });
 
         const { slug } = req.params;
-        const worker = await workerService.getWorkerBySlug(slug);
+        const profile = await workerProfileService.getBySlug(slug);
 
-        if (!worker) {
+        if (!profile) {
             return res.status(404).json({ msg: 'Profile not found' });
         }
 
-        return res.json({ worker });
+        return res.json({ worker: profile });
     } catch (error) {
         return next(error);
     }

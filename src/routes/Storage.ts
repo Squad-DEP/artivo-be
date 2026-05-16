@@ -8,7 +8,7 @@ export const app = express.Router();
 
 const documentService = new DocumentService();
 
-const DOCUMENT_TYPES = ['profile_photo', 'certificate', 'business_card', 'generated_card', 'other'] as const;
+const DOCUMENT_TYPES = ['profile_photo', 'certificate', 'business_card', 'generated_card', 'education', 'certification', 'portfolio', 'other'] as const;
 
 /**
  * POST /storage/initiate-upload

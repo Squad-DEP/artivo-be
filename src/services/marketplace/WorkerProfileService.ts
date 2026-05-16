@@ -43,6 +43,7 @@ export interface EducationItem {
     title: string;
     institution: string;
     year: number | null;
+    file_url: string | null;
 }
 
 export interface CertificationItem {
@@ -50,6 +51,7 @@ export interface CertificationItem {
     title: string;
     issuer: string;
     year: number | null;
+    file_url: string | null;
 }
 
 export interface PortfolioItem {
@@ -125,12 +127,14 @@ export class WorkerProfileService {
             languages:      profile.languages ?? [],
             availability:   profile.availability ?? 'available',
             categories:     profile.categories ?? [],
+            // NOTE: Sequelize raw:true aliases columns to JS attribute names (camelCase),
+            // NOT to the DB column names. Use attribute names here, not field names.
             experience: (experience as any[]).map(e => ({
                 id:          e.id,
                 title:       e.title,
                 company:     e.company,
-                start_year:  e.start_year,
-                end_year:    e.end_year ?? null,
+                start_year:  e.startYear,
+                end_year:    e.endYear ?? null,
                 description: e.description ?? null,
             })),
             education: (education as any[]).map(e => ({
@@ -138,21 +142,23 @@ export class WorkerProfileService {
                 title:       e.title,
                 institution: e.institution,
                 year:        e.year ?? null,
+                file_url:    e.fileUrl ?? null,
             })),
             certifications: (certifications as any[]).map(c => ({
-                id:    c.id,
-                title: c.title,
-                issuer: c.issuer,
-                year:  c.year ?? null,
+                id:      c.id,
+                title:   c.title,
+                issuer:  c.issuer,
+                year:    c.year ?? null,
+                file_url: c.fileUrl ?? null,
             })),
             portfolio: (portfolio as any[]).map(p => ({
                 id:          p.id,
                 title:       p.title,
                 description: p.description ?? null,
-                image_url:   p.image_url ?? null,
+                image_url:   p.imageUrl ?? null,
                 images:      p.images ?? [],
                 category:    p.category ?? null,
-                created_at:  p.created_at,
+                created_at:  p.createdAt,
             })),
         };
     }
@@ -172,5 +178,16 @@ export class WorkerProfileService {
     }>): Promise<void> {
         const profile = await this.findOrCreate(userId);
         await profile.update(data);
+    }
+
+    /**
+     * Look up a worker's full profile by their public share_slug.
+     * Returns null if the slug does not exist.
+     */
+    async getBySlug(slug: string): Promise<FullWorkerProfile | null> {
+        const { WorkerProfile } = await import('../../models/WorkerProfile');
+        const profile = await WorkerProfile.findOne({ where: { shareSlug: slug } });
+        if (!profile) return null;
+        return this.getFullProfile(profile.userId);
     }
 }

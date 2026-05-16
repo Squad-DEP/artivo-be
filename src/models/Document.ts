@@ -4,7 +4,7 @@ import sequelize from '../providers/db';
 export interface DocumentAttributes {
     id: string;
     userId: string;
-    documentType: 'profile_photo' | 'certificate' | 'business_card' | 'generated_card' | 'other';
+    documentType: 'profile_photo' | 'certificate' | 'business_card' | 'generated_card' | 'education' | 'certification' | 'portfolio' | 'other';
     fileKey: string;
     fileUrl: string;
     fileName?: string;

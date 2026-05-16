@@ -8,6 +8,7 @@ export interface WorkerEducationModel extends Model<InferAttributes<WorkerEducat
     title: string;
     institution: string;
     year: CreationOptional<number> | null;
+    fileUrl: CreationOptional<string> | null;
     createdAt: CreationOptional<Date>;
 }
 
@@ -17,5 +18,6 @@ export const WorkerEducation = sequelize.define<WorkerEducationModel>('worker_ed
     title: { type: DataTypes.STRING(255), allowNull: false },
     institution: { type: DataTypes.STRING(255), allowNull: false },
     year: { type: DataTypes.SMALLINT, allowNull: true },
+    fileUrl: { type: DataTypes.TEXT, allowNull: true, field: 'file_url' },
     createdAt: { type: DataTypes.DATE, allowNull: false, defaultValue: DataTypes.NOW, field: 'created_at' },
 }, { tableName: 'worker_education', timestamps: false });

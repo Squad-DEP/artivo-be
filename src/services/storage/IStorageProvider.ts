@@ -13,7 +13,6 @@ export interface IStorageProvider {
         documentType?: string
     ): Promise<PresignedUploadResult>;
 
-    deleteObject(fileKey: string, isPublic?: boolean): Promise<void>;
-    getPublicUrl(fileKey: string): string;
+    deleteObject(fileKey: string): Promise<void>;
     getPublicBucketUrl(fileKey: string): string;
 }
