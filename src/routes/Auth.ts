@@ -664,14 +664,86 @@ app.post('/auth/verify-email-manual', [
         const virtualAccountService = new VirtualAccountService();
         const virtualAccount = await virtualAccountService.createVirtualAccountForUser(user);
 
-        return res.json({ 
-            verified: true, 
+        return res.json({
+            verified: true,
             id: user.id,
             virtual_account: virtualAccount ? {
                 account_number: virtualAccount.virtualAccountNumber,
                 account_name: virtualAccount.virtualAccountName,
                 bank_name: virtualAccount.bankName,
             } : null,
+        });
+    } catch (error) {
+        return next(error);
+    }
+});
+
+/**
+ * @openapi
+ * /auth/phone-signup:
+ *   post:
+ *     description: >
+ *       Create or retrieve a worker account using only a phone number.
+ *       If an account with this phone already exists it is returned.
+ *       Returns a JWT valid for 30 days.
+ *     tags: [Auth]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [phone]
+ *             properties:
+ *               phone:
+ *                 type: string
+ *                 example: "+2348012345678"
+ *     responses:
+ *       200:
+ *         description: JWT + user info
+ */
+app.post('/auth/phone-signup', [
+    body('phone').notEmpty().trim().withMessage('Phone number is required'),
+], async (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    try {
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) return res.status(422).json({ errors: errors.mapped() });
+
+        const { phone } = matchedData(req) as { phone: string };
+
+        // Normalise — strip spaces, keep + prefix
+        const normalised = phone.replace(/\s+/g, '');
+
+        // Reuse existing account if phone already registered
+        let user = await User.findOne({ where: { phone: normalised } });
+
+        if (!user) {
+            // Derive a stable internal email from the phone
+            const slug = normalised.replace(/\D/g, '');
+            const internalEmail = `phone_${slug}@artivo.app`;
+
+            user = await User.create({
+                id: uuidv4(),
+                email: internalEmail,
+                phone: normalised,
+                fullName: 'Artisan',
+                role: 'worker',
+                password: bcrypt.hashSync(crypto.randomBytes(16).toString('hex'), bcrypt.genSaltSync(10)),
+                emailVerified: true,
+                emailVerificationKey: null,
+            });
+        }
+
+        const token = generateJWT(user, { expiresIn: '30d' });
+
+        return res.json({
+            access_token: token,
+            user: {
+                id: user.id,
+                phone: user.phone,
+                full_name: user.fullName,
+                role: user.role,
+            },
         });
     } catch (error) {
         return next(error);

@@ -1,7 +1,9 @@
-import { param, validationResult } from 'express-validator';
+import { param, body, validationResult, matchedData } from 'express-validator';
 import express from 'express';
 import { WorkerService } from '../services/marketplace/WorkerService';
 import { WorkerProfileService } from '../services/marketplace/WorkerProfileService';
+import { Organization } from '../models/Organization';
+import { OrgApplication } from '../models/OrgApplication';
 
 export const app = express.Router();
 
@@ -66,6 +68,68 @@ app.get('/credit-score/:user_id', [
             total_jobs: worker.total_jobs,
             average_rating: worker.average_rating,
             last_updated: new Date().toISOString(),
+        });
+    } catch (error) {
+        return next(error);
+    }
+});
+
+/**
+ * @openapi
+ * /public/organizations:
+ *   get:
+ *     description: List all active organizations artisans can apply to join
+ *     tags: [Public, Organizations]
+ */
+app.get('/organizations', async (_req: express.Request, res: express.Response, next: express.NextFunction) => {
+    try {
+        const orgs = await Organization.findAll({
+            where: { isActive: true },
+            attributes: ['id', 'name', 'description', 'logoUrl', 'sector', 'website'],
+            order: [['name', 'ASC']],
+        });
+        return res.json({ organizations: orgs });
+    } catch (error) {
+        return next(error);
+    }
+});
+
+/**
+ * @openapi
+ * /public/organizations/{org_id}/apply:
+ *   post:
+ *     description: Submit an artisan application to join an organization
+ *     tags: [Public, Organizations]
+ */
+app.post('/organizations/:org_id/apply', [
+    param('org_id').isUUID(),
+    body('phone').notEmpty().trim(),
+    body('full_name').optional({ nullable: true }).trim(),
+], async (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    try {
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) return res.status(422).json({ errors: errors.mapped() });
+
+        const { org_id } = req.params;
+        const { phone, full_name } = matchedData(req) as { phone: string; full_name?: string };
+
+        const org = await Organization.findByPk(org_id);
+        if (!org || !org.isActive) {
+            return res.status(404).json({ msg: 'Organization not found' });
+        }
+
+        const application = await OrgApplication.create({
+            organizationId: org_id,
+            phone: phone.replace(/\s+/g, ''),
+            fullName: full_name ?? null,
+            status: 'pending',
+        });
+
+        return res.status(201).json({
+            msg: 'Application submitted',
+            application_id: application.id,
+            organization: org.name,
+            status: 'pending',
         });
     } catch (error) {
         return next(error);
