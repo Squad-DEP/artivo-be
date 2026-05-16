@@ -592,6 +592,52 @@ app.get('/_authcheck', [
  *       200:
  *         description: Email verified and virtual account created
  */
+/**
+ * @openapi
+ * /auth/guest-signup:
+ *   post:
+ *     description: Create a guest account with auto-generated credentials. No captcha required.
+ *     tags: [Auth]
+ */
+app.post('/auth/guest-signup', [
+    body('role').exists().isIn(['worker', 'customer']).withMessage('Role must be worker or customer'),
+], async (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    try {
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) return res.status(422).json({ errors: errors.mapped() });
+
+        const { role } = matchedData(req);
+
+        // Generate readable guest credentials
+        const WORDS = ['swift', 'bright', 'bold', 'keen', 'quick', 'calm', 'clear', 'sharp', 'smart', 'fresh'];
+        const word = WORDS[Math.floor(Math.random() * WORDS.length)];
+        const num = Math.floor(1000 + Math.random() * 9000); // 4-digit
+        const guestEmail = `${word}${num}@artivo.app`;
+        const guestPassword = `Artivo#${crypto.randomBytes(3).toString('hex')}`;
+
+        const user = await User.create({
+            id: uuidv4(),
+            email: guestEmail,
+            fullName: 'Guest',
+            role,
+            password: bcrypt.hashSync(guestPassword, bcrypt.genSaltSync(10)),
+            emailVerified: true,
+            emailVerificationKey: null,
+        });
+
+        const token = generateJWT(user, { expiresIn: '7d' });
+
+        return res.json({
+            accessToken: token,
+            guest_email: guestEmail,
+            guest_password: guestPassword,
+            is_guest: true,
+        });
+    } catch (error) {
+        return next(error);
+    }
+});
+
 app.post('/auth/verify-email-manual', [
     body('email').isEmail().toLowerCase(),
 ], async (req: express.Request, res: express.Response, next: express.NextFunction) => {
